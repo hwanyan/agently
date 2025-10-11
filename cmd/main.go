@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -14,6 +13,8 @@ import (
 	"agent-hwan/internal/llm"
 	"agent-hwan/internal/tools"
 	"agent-hwan/pkg/types"
+
+	"github.com/chzyer/readline"
 )
 
 func main() {
@@ -164,22 +165,25 @@ func startInteractiveSession(aiAgent *agent.BasicAgent) {
 	fmt.Println()
 	fmt.Println(strings.Repeat("=", 60))
 
-	// 创建输入扫描器：带缓冲的扫描器，用于逐行读取标准输入（控制台输入）
-	// os.Stdin 是一个文件对象，表示标准输入（控制台输入），类型为 *os.File，实现了 io.Reader 接口
-	// bufio.NewScanner 将文件对象包装成一个带缓冲的扫描器，
-	// Scan 方法用于逐行读取标准输入（持续读取用户输入，直到遇到 EOF（如 Ctrl+D 或 Ctrl+Z）才退出）
-	scanner := bufio.NewScanner(os.Stdin)
 	ctx := context.Background()
 
-	for {
-		fmt.Print("\n👤 用户: ")
+	// 创建readline实例
+	rl, err := readline.New("👤 用户: ")
+	if err != nil {
+		fmt.Printf("❌ 创建 readline 失败: %v\n", err)
+		return
+	}
+	defer rl.Close()
 
+	for {
 		// 读取用户输入
-		if !scanner.Scan() {
-			break
+		userInput, err := rl.Readline()
+		if err != nil {
+			break // EOF或其他错误
 		}
 
-		userInput := strings.TrimSpace(scanner.Text())
+		// 去除用户输入前后的空白字符
+		userInput = strings.TrimSpace(userInput)
 
 		// 处理特殊命令
 		if handled := handleSpecialCommands(userInput, aiAgent); handled {
@@ -207,10 +211,6 @@ func startInteractiveSession(aiAgent *agent.BasicAgent) {
 		// 清除"正在思考..."并显示响应
 		fmt.Print("\r🤖 助手: ")
 		fmt.Println(response)
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Printf("读取输入时出错: %v", err)
 	}
 
 	fmt.Println("\n👋 感谢使用AI Agent教程！再见！")
