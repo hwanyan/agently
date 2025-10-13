@@ -1,5 +1,5 @@
 {
-  "llm-openai": {
+  "llm-gpt": {
     "provider": "openai",
     "api_key": "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",
     "model": "gpt-3.5-turbo",
@@ -11,10 +11,24 @@
     "model": "deepseek-chat",
     "base_url": "https://api.deepseek.com/v1"
   },
+  "llm": {
+    "provider": "deepseek", 
+    "api_key": "test_llm_key",
+    "model": "test_llm_model",
+    "base_url": "test_llm_url"
+  },
   "agent": {
     "name": "智能助手",
     "description": "一个能够使用工具的智能AI助手",
     "max_tokens": 4096,
     "temperature": 0.7
+  },
+  "tools": {
+    "weather": {
+      "name": "qweather",
+      "description": "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等",
+      "api_key": "test_whr_key",
+      "base_url": "test_whr_url"
+    }
   }
 }

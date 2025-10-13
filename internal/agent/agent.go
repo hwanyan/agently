@@ -76,6 +76,7 @@ func (a *BasicAgent) ProcessMessage(ctx context.Context, userMessage string) (st
 		if err != nil {
 			return "", fmt.Errorf("LLM 调用失败: %w", err)
 		}
+		// fmt.Printf("\n  🎯 LLM 调用结果: %+v", response)
 
 		// 添加LLM响应到历史记录
 		a.history = append(a.history, *response)
@@ -221,6 +222,7 @@ func (a *BasicAgent) getToolsList() []types.Tool {
 
 // processToolCalls 处理工具调用
 func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.ToolCall) error {
+	// fmt.Println("\n  🎯 进入工具调用函数...")
 	for _, toolCall := range toolCalls {
 		// 查找对应的工具
 		tool, exists := a.tools[toolCall.Function.Name]

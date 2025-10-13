@@ -31,11 +31,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌ 加载配置失败: %v", err)
 	}
-	fmt.Printf("✅ 配置加载成功！使用模型: %s\n", cfg.LLM.Model)
+	fmt.Println("✅ 配置加载成功！")
 
 	// 第二步：创建LLM客户端
 	fmt.Println("\n🔗 步骤2: 创建LLM客户端...")
-	llmClient := llm.NewDeepSeekClient(
+	llmClient := llm.NewOpenAIClient(
 		cfg.LLM.APIKey,
 		cfg.LLM.Model,
 		cfg.LLM.BaseURL,
@@ -44,7 +44,11 @@ func main() {
 
 	// 第三步：创建AI Agent
 	fmt.Println("\n🧠 步骤3: 创建AI Agent...")
-	systemPrompt := createSystemPrompt()
+	systemPrompt, err := config.GetSystemPrompt("")
+	if err != nil {
+		fmt.Printf("  ❌ 获取系统提示失败: \n%v\n", err)
+	}
+	fmt.Println("  ✅ 成功加载系统提示词！")
 	aiAgent := agent.NewBasicAgent(
 		cfg.Agent.Name,
 		cfg.Agent.Description,
@@ -55,7 +59,7 @@ func main() {
 
 	// 第四步：添加工具
 	fmt.Println("\n🔧 步骤4: 添加工具...")
-	setupTools(aiAgent)
+	setupTools(aiAgent, cfg)
 	fmt.Println("✅ 所有工具添加完成！")
 
 	// 第五步：开始交互
@@ -67,10 +71,12 @@ func main() {
 func loadConfiguration() (*types.Config, error) {
 	// 首先尝试从配置文件加载
 	configPath := "config.json"
+	// 读取配置文件
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  📄 从配置文件加载: %s\n", configPath)
+		// 加载配置文件并验证
 		cfg, err := config.LoadConfig(configPath)
-		if err == nil && cfg.LLM.APIKey != "" {
+		if err == nil {
 			return cfg, nil
 		}
 		fmt.Println("  ⚠️  配置文件中的API密钥未设置，尝试环境变量...")
@@ -84,49 +90,13 @@ func loadConfiguration() (*types.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("从环境变量加载配置失败: %w", err)
 	}
+	fmt.Printf("加载的配置：%v", cfg)
 
 	return cfg, nil
 }
 
-// createSystemPrompt 创建系统提示词
-func createSystemPrompt() string {
-	return `你是一个智能AI助手，具有以下特点和能力：
-
-🎯 **核心特点**：
-- 友好、专业、乐于助人
-- 能够使用各种工具来解决用户问题
-- 会根据问题类型选择合适的工具
-- 提供准确、有用的信息
-
-🔧 **可用工具**：
-1. **calculator** - 数学计算工具
-   - 支持基本四则运算（+、-、*、/）
-   - 可以处理复杂的数学表达式
-   - 示例：计算 123 + 456，或者 15 * 8 - 20
-
-2. **weather** - 天气查询工具
-   - 查询指定城市的天气信息
-   - 提供温度、天气状况等信息
-   - 示例：查询北京、上海、深圳等城市天气
-
-📋 **工作流程**：
-1. 仔细分析用户的问题
-2. 判断是否需要使用工具
-3. 如果需要，选择合适的工具并调用
-4. 基于工具结果提供完整、有用的回答
-5. 如果不需要工具，直接回答用户问题
-
-💡 **回答原则**：
-- 使用中文回答
-- 保持友好和专业的语调
-- 提供清晰、准确的信息
-- 如果遇到无法解决的问题，诚实说明并建议替代方案
-
-现在，请准备好帮助用户解决各种问题！`
-}
-
 // setupTools 设置工具
-func setupTools(aiAgent *agent.BasicAgent) {
+func setupTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
 	// 添加计算器工具
 	fmt.Println("  ➕ 添加计算器工具...")
 	calculatorTool := tools.NewCalculatorTool("", "")
@@ -135,7 +105,10 @@ func setupTools(aiAgent *agent.BasicAgent) {
 
 	// 添加天气工具
 	fmt.Println("  🌤️  添加天气工具...")
-	weatherTool := tools.NewWeatherTool("", "", "")
+	weatherTool := tools.NewWeatherTool(cfg.Tools.Weather.Name,
+		cfg.Tools.Weather.Desc,
+		cfg.Tools.Weather.APIKey,
+		cfg.Tools.Weather.BaseURL)
 	aiAgent.AddTool(weatherTool)
 	fmt.Println("     ✓ 天气工具已添加")
 

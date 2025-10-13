@@ -109,10 +109,24 @@ type AgentConfig struct {
 	Temperature float64 `json:"temperature"` // 温度参数
 }
 
+// WeatherConfig 天气工具配置
+type WeatherConfig struct {
+	Name    string `json:"name"`        // 工具名称
+	Desc    string `json:"description"` // 工具描述
+	APIKey  string `json:"api_key"`     // 和风天气API密钥
+	BaseURL string `json:"base_url"`    // 和风天气API基础URL
+}
+
+// ToolsConfig 工具配置
+type ToolsConfig struct {
+	Weather WeatherConfig `json:"weather"` // 天气工具配置
+}
+
 // Config 应用程序总配置
 type Config struct {
 	LLM   LLMConfig   `json:"llm"`   // LLM配置
 	Agent AgentConfig `json:"agent"` // Agent配置
+	Tools ToolsConfig `json:"tools"` // 工具配置
 }
 
 // ToolParameter 工具参数定义

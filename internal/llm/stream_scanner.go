@@ -1,5 +1,5 @@
 // 定义 streamScanner 流式响应扫描器
-package utils
+package llm
 
 import (
 	"io"

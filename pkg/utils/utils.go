@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+// GenerateMessageID 生成唯一的消息ID
+// 使用当前时间戳生成唯一标识符
+// 返回：
+//   - string: 生成的唯一ID
+func GenerateMessageID() string {
+	return fmt.Sprintf("msg_%d", time.Now().UnixNano())
+}
+
 // GenerateID 生成唯一ID
 // 使用当前时间戳和随机数生成唯一标识符
 // 返回：
@@ -16,12 +24,12 @@ import (
 func GenerateID() string {
 	// 使用时间戳作为前缀
 	timestamp := time.Now().UnixNano()
-	
+
 	// 生成4字节随机数
 	randomBytes := make([]byte, 4)
 	rand.Read(randomBytes)
 	randomHex := hex.EncodeToString(randomBytes)
-	
+
 	return fmt.Sprintf("%d_%s", timestamp, randomHex)
 }
 
@@ -37,11 +45,11 @@ func TruncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	
+
 	if maxLen <= 3 {
 		return s[:maxLen]
 	}
-	
+
 	return s[:maxLen-3] + "..."
 }
 
@@ -74,16 +82,16 @@ func FormatDuration(d time.Duration) string {
 func SanitizeInput(input string) string {
 	// 移除首尾空白字符
 	input = strings.TrimSpace(input)
-	
+
 	// 替换多个连续的空白字符为单个空格
 	input = strings.Join(strings.Fields(input), " ")
-	
+
 	// 移除一些潜在危险的字符（根据需要调整）
 	dangerousChars := []string{"\x00", "\x01", "\x02", "\x03", "\x04", "\x05"}
 	for _, char := range dangerousChars {
 		input = strings.ReplaceAll(input, char, "")
 	}
-	
+
 	return input
 }
 
@@ -125,14 +133,14 @@ func Contains[T comparable](slice []T, item T) bool {
 func RemoveDuplicates[T comparable](slice []T) []T {
 	seen := make(map[T]bool)
 	result := make([]T, 0, len(slice))
-	
+
 	for _, item := range slice {
 		if !seen[item] {
 			seen[item] = true
 			result = append(result, item)
 		}
 	}
-	
+
 	return result
 }
 
@@ -213,7 +221,7 @@ func SafeFloat64(v interface{}) (float64, bool) {
 //   - error: 最后一次执行的错误，如果成功则为nil
 func Retry(maxRetries int, delay time.Duration, fn func() error) error {
 	var lastErr error
-	
+
 	for i := 0; i <= maxRetries; i++ {
 		if err := fn(); err == nil {
 			return nil // 成功执行
@@ -224,6 +232,6 @@ func Retry(maxRetries int, delay time.Duration, fn func() error) error {
 			}
 		}
 	}
-	
+
 	return fmt.Errorf("重试%d次后仍然失败，最后错误: %w", maxRetries, lastErr)
 }

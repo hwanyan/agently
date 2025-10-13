@@ -5,13 +5,65 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"agent-hwan/pkg/types"
+
+	"gopkg.in/yaml.v3"
 )
+
+// PromptConfig 提示词配置结构
+type PromptConfig struct {
+	SystemPrompt string `yaml:"system_prompt"`
+	Settings     struct {
+		Language          string `yaml:"language"`
+		Tone              string `yaml:"tone"`
+		MaxResponseLength int    `yaml:"max_response_length"`
+	} `yaml:"settings"`
+}
+
+// getSystemPrompt 获取系统提示词
+// 参数：
+//   - promptPath: 提示词配置文件路径
+//
+// 返回：
+//   - string: 系统提示词内容
+//   - error: 可能的错误
+func GetSystemPrompt(promptPath string) (string, error) {
+	fmt.Println("  💼 获取系统提示词...")
+
+	// 如果路径为空，使用默认路径
+	if promptPath == "" {
+		promptPath = "internal/prompt/prompt.yaml"
+	}
+
+	// 读取 YAML 文件
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		return "", fmt.Errorf("读取提示词配置文件失败: %w", err)
+	}
+
+	// 解析 YAML 配置
+	var promptConfig PromptConfig
+	if err := yaml.Unmarshal(data, &promptConfig); err != nil {
+		return "", fmt.Errorf("解析提示词配置文件失败: %w", err)
+	}
+
+	// 验证系统提示词不为空
+	if promptConfig.SystemPrompt == "" {
+		return "", fmt.Errorf("系统提示词不能为空")
+	}
+
+	return promptConfig.SystemPrompt, nil
+}
 
 // LoadConfig 从JSON文件加载配置
 // 参数：
 //   - configPath: 配置文件路径
+//
+// 说明：
+//
+//   - 加载配置后，会进行验证，如果验证失败，则会返回错误
 //
 // 返回：
 //   - *types.Config: 加载的配置
@@ -57,6 +109,14 @@ func LoadConfigFromEnv() (*types.Config, error) {
 			Description: getEnvOrDefault("AGENT_DESCRIPTION", "一个能够使用工具的智能AI助手"),
 			MaxTokens:   getEnvIntOrDefault("AGENT_MAX_TOKENS", 4096),
 			Temperature: getEnvFloatOrDefault("AGENT_TEMPERATURE", 0.7),
+		},
+		Tools: types.ToolsConfig{
+			Weather: types.WeatherConfig{
+				Name:    getEnvOrDefault("WEATHER_NAME", "天气查询工具"),
+				Desc:    getEnvOrDefault("WEATHER_DESCRIPTION", "查询指定城市的当前天气信息"),
+				APIKey:  os.Getenv("WEATHER_API_KEY"),
+				BaseURL: os.Getenv("WEATHER_BASE_URL"),
+			},
 		},
 	}
 
@@ -117,6 +177,19 @@ func validateConfig(config *types.Config) error {
 
 	if config.Agent.Temperature < 0 || config.Agent.Temperature > 2 {
 		return fmt.Errorf("温度参数必须在0-2之间")
+	}
+
+	// 验证工具配置
+	if config.Tools.Weather.APIKey == "" {
+		return fmt.Errorf("天气API密钥不能为空")
+	}
+
+	if config.Tools.Weather.BaseURL == "" {
+		return fmt.Errorf("天气API基础URL不能为空")
+	}
+
+	if !strings.HasPrefix(config.Tools.Weather.BaseURL, "http://") && !strings.HasPrefix(config.Tools.Weather.BaseURL, "https://") {
+		return fmt.Errorf("天气API基础URL格式不正确")
 	}
 
 	return nil
@@ -194,6 +267,14 @@ func GetDefaultConfig() *types.Config {
 			Description: "一个能够使用工具的智能AI助手",
 			MaxTokens:   4096,
 			Temperature: 0.7,
+		},
+		Tools: types.ToolsConfig{
+			Weather: types.WeatherConfig{
+				Name:    "weather",
+				Desc:    "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等",
+				APIKey:  "your-qweather-api-key-here",
+				BaseURL: "https://devapi.qweather.com/v7",
+			},
 		},
 	}
 }

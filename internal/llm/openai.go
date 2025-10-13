@@ -11,13 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"agent-hwan/internal/llm/utils"
 	"agent-hwan/pkg/types"
-)
-
-const (
-	openaiBaseURL = "https://api.openai.com/v1"
-	openaiModel   = "gpt-3.5-turbo"
+	"agent-hwan/pkg/utils"
 )
 
 // OpenAIClient OpenAI客户端
@@ -38,14 +33,6 @@ type OpenAIClient struct {
 // 返回：
 //   - *OpenAIClient: OpenAI客户端实例
 func NewOpenAIClient(apiKey, model, baseURL string) *OpenAIClient {
-	if baseURL == "" {
-		baseURL = openaiBaseURL
-	}
-
-	if model == "" {
-		model = openaiModel
-	}
-
 	return &OpenAIClient{
 		apiKey:  apiKey,
 		baseURL: baseURL,
@@ -247,7 +234,7 @@ func (c *OpenAIClient) sendStreamRequest(ctx context.Context, endpoint string, r
 
 // processStreamResponse 处理流式响应
 func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<- string) error {
-	scanner := &utils.StreamScanner{}
+	scanner := &StreamScanner{}
 	scanner.SetReader(body)
 
 	for scanner.Scan() {
