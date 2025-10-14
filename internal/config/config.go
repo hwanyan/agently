@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"agent-hwan/pkg/types"
@@ -14,6 +15,8 @@ import (
 
 // PromptConfig 提示词配置结构
 type PromptConfig struct {
+	Scene        string `yaml:"scene"`
+	Name         string `yaml:"name"`
 	SystemPrompt string `yaml:"system_prompt"`
 	Settings     struct {
 		Language          string `yaml:"language"`
@@ -22,39 +25,44 @@ type PromptConfig struct {
 	} `yaml:"settings"`
 }
 
-// getSystemPrompt 获取系统提示词
-// 参数：
-//   - promptPath: 提示词配置文件路径
-//
-// 返回：
-//   - string: 系统提示词内容
-//   - error: 可能的错误
-func GetSystemPrompt(promptPath string) (string, error) {
-	fmt.Println("  💼 获取系统提示词...")
+// ToolInfo 工具信息结构
+type ToolInfo struct {
+	Name        string
+	Description string
+	Examples    []string
+}
 
-	// 如果路径为空，使用默认路径
-	if promptPath == "" {
-		promptPath = "internal/prompt/prompt.yaml"
-	}
+// ListAvailableScenes 列出所有可用的场景
+func ListAvailableScenes() ([]PromptConfig, error) {
+	var scenes []PromptConfig
 
-	// 读取 YAML 文件
-	data, err := os.ReadFile(promptPath)
+	// 扫描 internal/prompt/ 目录下的所有 YAML 文件
+	promptDir := "internal/prompt"
+	files, err := filepath.Glob(filepath.Join(promptDir, "*.yaml"))
 	if err != nil {
-		return "", fmt.Errorf("读取提示词配置文件失败: %w", err)
+		return nil, fmt.Errorf("扫描提示词文件失败: %w", err)
 	}
 
-	// 解析 YAML 配置
-	var promptConfig PromptConfig
-	if err := yaml.Unmarshal(data, &promptConfig); err != nil {
-		return "", fmt.Errorf("解析提示词配置文件失败: %w", err)
+	// 遍历所有 YAML 文件
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			fmt.Printf("  ⚠️  读取文件 %s 失败: %v\n", file, err)
+			continue
+		}
+
+		var config PromptConfig
+		if err := yaml.Unmarshal(data, &config); err != nil {
+			fmt.Printf("  ⚠️  解析文件 %s 失败: %v\n", file, err)
+			continue
+		}
+
+		if config.Scene != "" {
+			scenes = append(scenes, config)
+		}
 	}
 
-	// 验证系统提示词不为空
-	if promptConfig.SystemPrompt == "" {
-		return "", fmt.Errorf("系统提示词不能为空")
-	}
-
-	return promptConfig.SystemPrompt, nil
+	return scenes, nil
 }
 
 // LoadConfig 从JSON文件加载配置
@@ -101,7 +109,7 @@ func LoadConfigFromEnv() (*types.Config, error) {
 		LLM: types.LLMConfig{
 			Provider: getEnvOrDefault("LLM_PROVIDER", "openai"),
 			APIKey:   os.Getenv("LLM_API_KEY"),
-			Model:    getEnvOrDefault("LLM_MODEL", "gpt-3.5-turbo"),
+			Model:    os.Getenv("LLM_MODEL"),
 			BaseURL:  os.Getenv("LLM_BASE_URL"),
 		},
 		Agent: types.AgentConfig{
@@ -112,8 +120,8 @@ func LoadConfigFromEnv() (*types.Config, error) {
 		},
 		Tools: types.ToolsConfig{
 			Weather: types.WeatherConfig{
-				Name:    getEnvOrDefault("WEATHER_NAME", "天气查询工具"),
-				Desc:    getEnvOrDefault("WEATHER_DESCRIPTION", "查询指定城市的当前天气信息"),
+				Name:    os.Getenv("WEATHER_NAME"),
+				Desc:    os.Getenv("WEATHER_DESC"),
 				APIKey:  os.Getenv("WEATHER_API_KEY"),
 				BaseURL: os.Getenv("WEATHER_BASE_URL"),
 			},

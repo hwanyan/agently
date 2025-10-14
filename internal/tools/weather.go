@@ -124,7 +124,7 @@ func (w *WeatherTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"city": map[string]interface{}{
 				"type":        "string",
-				"description": "要查询天气的城市名称，支持中文城市名，如：北京、上海、广州、深圳等，也支持英文城市名",
+				"description": "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等。支持英文字母缩写，如：beijing、shanghai、guangzhou 等。",
 			},
 		},
 		"required": []string{"city"},
@@ -353,35 +353,6 @@ func (w *WeatherTool) formatWeatherData(weatherData *QWeatherCurrentResponse, lo
 	return string(resultJSON), nil
 }
 
-// getMockWeatherData 返回模拟的天气数据
-// 当没有API密钥时使用，用于演示目的
-func (w *WeatherTool) getMockWeatherData(city string) string {
-	mockData := map[string]interface{}{
-		"城市":     city,
-		"地区":     "重庆",
-		"国家":     "中国",
-		"观测时间":   time.Now().Format("2006-01-02T15:04+08:00"),
-		"温度":     "22°C",
-		"体感温度":   "24°C",
-		"天气状况":   "多云",
-		"风向":     "东南风",
-		"风力等级":   "3级",
-		"风速":     "12 km/h",
-		"相对湿度":   "65%",
-		"大气压强":   "1013 hPa",
-		"能见度":    "10 km",
-		"云量":     "60%",
-		"当前小时降水": "0 mm",
-		"露点温度":   "18°C",
-		"数据来源":   "模拟数据",
-		"更新时间":   time.Now().Format("2006-01-02T15:04+08:00"),
-		"说明":     "这是模拟数据，请配置和风天气API密钥以获取实际天气信息",
-	}
-
-	resultJSON, _ := json.MarshalIndent(mockData, "", "  ")
-	return string(resultJSON)
-}
-
 // ValidateConfig 验证天气工具配置
 func (w *WeatherTool) ValidateConfig() error {
 	if w.apiKey == "" {
@@ -398,26 +369,4 @@ func (w *WeatherTool) ValidateConfig() error {
 	}
 
 	return nil
-}
-
-// TestConnection 测试API连接
-func (w *WeatherTool) TestConnection(ctx context.Context) error {
-	if w.apiKey == "" {
-		return fmt.Errorf("API密钥未设置，无法测试连接")
-	}
-
-	// 使用北京作为测试城市
-	_, _, err := w.getCityLocation(ctx, "北京")
-	return err
-}
-
-// GetSupportedRegions 获取支持的地区信息
-func (w *WeatherTool) GetSupportedRegions() []string {
-	return []string{
-		"支持全球城市天气查询",
-		"中国城市：北京、上海、广州、深圳、杭州、成都等",
-		"国际城市：New York, London, Tokyo, Paris等",
-		"支持中英文城市名称",
-		"数据来源：和风天气 (QWeather)",
-	}
 }

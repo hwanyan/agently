@@ -11,6 +11,7 @@ import (
 	"agent-hwan/internal/agent"
 	"agent-hwan/internal/config"
 	"agent-hwan/internal/llm"
+	"agent-hwan/internal/prompt"
 	"agent-hwan/internal/tools"
 	"agent-hwan/pkg/types"
 
@@ -30,6 +31,7 @@ func main() {
 	cfg, err := loadConfiguration()
 	if err != nil {
 		log.Fatalf("❌ 加载配置失败: %v", err)
+		os.Exit(0)
 	}
 	fmt.Println("✅ 配置加载成功！")
 
@@ -42,11 +44,22 @@ func main() {
 	)
 	fmt.Println("✅ LLM客户端创建成功！")
 
-	// 第三步：创建AI Agent
-	fmt.Println("\n🧠 步骤3: 创建AI Agent...")
-	systemPrompt, err := config.GetSystemPrompt("")
+	// 第三步：获取全部的 Prompt 配置
+	fmt.Println("\n📋 步骤3: 获取全部的 Prompt 配置...")
+	prompts, err := prompt.GetPrompts()
+	if err != nil {
+		log.Fatalf("❌ 获取 Prompt 配置失败: %v", err)
+		os.Exit(0)
+	}
+	fmt.Println("✅ Prompt配置获取成功！")
+	fmt.Printf("  配置信息：%v\n", prompts)
+
+	// 第四步：创建AI Agent
+	fmt.Println("\n🧠 步骤4: 创建AI Agent...")
+	systemPrompt, err := prompt.GetSystemPrompt(prompts, &cfg.Tools)
 	if err != nil {
 		fmt.Printf("  ❌ 获取系统提示失败: \n%v\n", err)
+		os.Exit(0)
 	}
 	fmt.Println("  ✅ 成功加载系统提示词！")
 	aiAgent := agent.NewBasicAgent(
@@ -57,13 +70,13 @@ func main() {
 	)
 	fmt.Printf("✅ AI Agent '%s' 创建成功！\n", cfg.Agent.Name)
 
-	// 第四步：添加工具
-	fmt.Println("\n🔧 步骤4: 添加工具...")
+	// 第五步：添加工具
+	fmt.Println("\n🔧 步骤5: 添加工具...")
 	setupTools(aiAgent, cfg)
 	fmt.Println("✅ 所有工具添加完成！")
 
-	// 第五步：开始交互
-	fmt.Println("\n🎯 步骤5: 开始交互...")
+	// 第六步：开始交互
+	fmt.Println("\n🎯 步骤6: 开始交互...")
 	startInteractiveSession(aiAgent)
 }
 
@@ -90,7 +103,7 @@ func loadConfiguration() (*types.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("从环境变量加载配置失败: %w", err)
 	}
-	fmt.Printf("加载的配置：%v", cfg)
+	// fmt.Printf("  加载的配置：%v", cfg)
 
 	return cfg, nil
 }
