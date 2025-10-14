@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,7 +116,43 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 	tools := a.getToolsList()
 
 	// 发送流式请求到LLM
-	return a.llmClient.ChatStream(ctx, a.history, tools)
+	rawStream, err := a.llmClient.ChatStream(ctx, a.history, tools)
+	if err != nil {
+		return nil, err
+	}
+
+	// 创建包装的流式响应，用于收集完整响应并保存到历史
+	wrappedStream := make(chan string, 100)
+
+	go func() {
+		defer close(wrappedStream)
+
+		var fullResponse strings.Builder
+
+		// 转发流式响应并收集完整内容
+		for chunk := range rawStream {
+			fullResponse.WriteString(chunk)
+			wrappedStream <- chunk
+		}
+
+		// 将完整的AI响应保存到历史记录
+		if fullResponse.Len() > 0 {
+			aiMessage := types.Message{
+				ID:        fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+				Role:      "assistant",
+				Content:   fullResponse.String(),
+				ToolCalls: []types.ToolCall{}, // 流式响应暂不支持工具调用
+				Timestamp: time.Now(),
+			}
+			
+			// 需要重新获取锁来修改历史记录
+			a.mutex.Lock()
+			a.history = append(a.history, aiMessage)
+			a.mutex.Unlock()
+		}
+	}()
+
+	return wrappedStream, nil
 }
 
 // AddTool 添加工具到Agent

@@ -137,17 +137,34 @@ func startInteractiveSession(aiAgent *agent.BasicAgent) {
 		fmt.Print("🤖 助手: ")
 		fmt.Print("正在思考...")
 
-		// 调用Agent处理消息
-		response, err := aiAgent.ProcessMessage(ctx, userInput)
+		// // 方式一：非流式响应接口的处理逻辑
+		// // 调用Agent处理消息
+		// response, err := aiAgent.ProcessMessage(ctx, userInput)
+		// if err != nil {
+		// 	// 清除"正在思考..."并显示错误（注：/r 的作用是将光标移动到当前行的行首，但不会换行，即实现同一行的覆盖式更新）
+		// 	fmt.Printf("\r🤖 助手: ❌ 处理消息时出错: %v\n", err)
+		// 	continue
+		// }
+		// // 清除"正在思考..."并显示响应
+		// fmt.Print("\r🤖 助手: ")
+		// fmt.Println(response)
+
+		// 方式二：流式响应接口的处理逻辑
+		// 调用Agent处理消息（流式）
+		responseStream, err := aiAgent.ProcessMessageStream(ctx, userInput)
 		if err != nil {
 			// 清除"正在思考..."并显示错误（注：/r 的作用是将光标移动到当前行的行首，但不会换行，即实现同一行的覆盖式更新）
 			fmt.Printf("\r🤖 助手: ❌ 处理消息时出错: %v\n", err)
 			continue
 		}
-
-		// 清除"正在思考..."并显示响应
+		// 清除"正在思考..."并开始流式输出
 		fmt.Print("\r🤖 助手: ")
-		fmt.Println(response)
+		// 读取并显示流式响应
+		for chunk := range responseStream {
+			fmt.Print(chunk)
+		}
+
+		fmt.Println() // 换行
 	}
 
 	fmt.Println("\n👋 感谢使用AI Agent教程！再见！")
