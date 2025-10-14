@@ -3,8 +3,6 @@ package prompt
 import (
 	"agent-hwan/internal/config"
 	"agent-hwan/internal/tools"
-	"agent-hwan/pkg/types"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,7 +63,7 @@ func GetPrompts() (map[string]string, error) {
 // 返回：
 //   - string: 系统提示词内容
 //   - error: 可能的错误
-func GetSystemPrompt(prompts map[string]string, toolConfig *types.ToolsConfig) (string, error) {
+func GetSystemPrompt(prompts map[string]string, toolRegistry *tools.ToolRegistry) (string, error) {
 	fmt.Println("  💼 获取系统提示词...")
 
 	// 获取系统 Prompt
@@ -75,7 +73,7 @@ func GetSystemPrompt(prompts map[string]string, toolConfig *types.ToolsConfig) (
 	}
 
 	// 生成工具信息
-	toolsSection := generateToolsSection(toolConfig)
+	toolsSection := generateToolsSection(toolRegistry)
 
 	// 替换工具占位符
 	// 方式一：直接替换
@@ -90,27 +88,20 @@ func GetSystemPrompt(prompts map[string]string, toolConfig *types.ToolsConfig) (
 		return "", fmt.Errorf("替换系统提示词模板变量失败: %w", err)
 	}
 
-	fmt.Printf("✅ 系统提示词替换成功！\n%s", systemPrompt)
+	fmt.Printf("  ✅ 系统提示词替换成功！内容如下：\n%s\n", systemPrompt)
 	return systemPrompt, nil
 }
 
 // generateToolsSection 生成工具信息部分
-func generateToolsSection(toolConfig *types.ToolsConfig) string {
-	toolCount := 1
+func generateToolsSection(toolConfig *tools.ToolRegistry) string {
 	var builder strings.Builder
 
-	// 添加天气工具
-	builder.WriteString(fmt.Sprintf("%d. **%s**\n", toolCount, toolConfig.Weather.Name))
-	builder.WriteString(fmt.Sprintf("%s\n", toolConfig.Weather.Desc))
-	// 将 Parameters() 返回的 map 转换为格式化的 JSON 字符串
-	weatherTool := tools.WeatherTool{}
-	paramsJSON, err := json.MarshalIndent(weatherTool.Parameters(), "", "  ")
-	if err != nil {
-		builder.WriteString(fmt.Sprintf("参数格式化失败: %v\n\n", err))
-	} else {
-		builder.WriteString(fmt.Sprintf("参数结构:\n%s\n\n", string(paramsJSON)))
+	// 遍历所有工具信息，添加到工具列表中
+	for index, tool := range toolConfig.GetAvailableTools() {
+		builder.WriteString(fmt.Sprintf("%d. **%s**\n", (index + 1), tool.Name))
+		builder.WriteString(fmt.Sprintf("%s\n", tool.Description))
+		builder.WriteString(fmt.Sprintf("%s\n", tool.Arguments))
 	}
-	toolCount++
 
 	return strings.TrimSpace(builder.String())
 }

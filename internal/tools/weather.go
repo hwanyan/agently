@@ -12,6 +12,15 @@ import (
 	"time"
 )
 
+// 天气工具配置常量（定制化内容）
+const (
+	// WeatherToolName 默认天气工具名称
+	WeatherToolName = "qweather"
+
+	// WeatherToolDesc 默认天气工具描述
+	WeatherToolDesc = "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等。支持英文字母缩写，如：beijing、shanghai、guangzhou 等。"
+)
+
 // readResponseBody 读取并解压缩响应体
 func readResponseBody(resp *http.Response) ([]byte, error) {
 	var reader io.Reader = resp.Body
@@ -85,17 +94,15 @@ type QWeatherCurrentResponse struct {
 
 // NewWeatherTool 创建一个新的天气查询工具实例
 // 参数：
-//   - name: 工具名称（可选，默认为weather）
-//   - desc: 工具描述（可选，使用默认描述）
-//   - apiKey: 和风天气API密钥（必须，从配置文件或环境变量读取）
-//   - baseURL: 和风天气API基础URL（必须，从配置文件或环境变量读取）
+//   - apiKey: 和风天气API密钥
+//   - baseURL: 和风天气API基础URL
 //
 // 返回：
 //   - *WeatherTool: 天气工具实例
-func NewWeatherTool(name, desc, apiKey, baseURL string) *WeatherTool {
+func NewWeatherTool(apiKey, baseURL string) *WeatherTool {
 	return &WeatherTool{
-		name:        name,
-		description: desc,
+		name:        WeatherToolName,
+		description: WeatherToolDesc,
 		apiKey:      apiKey,
 		baseURL:     baseURL,
 		client: &http.Client{

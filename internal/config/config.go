@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"agent-hwan/pkg/types"
-
-	"gopkg.in/yaml.v3"
 )
 
 // PromptConfig 提示词配置结构
@@ -32,40 +29,43 @@ type ToolInfo struct {
 	Examples    []string
 }
 
-// ListAvailableScenes 列出所有可用的场景
-func ListAvailableScenes() ([]PromptConfig, error) {
-	var scenes []PromptConfig
+// LoadConfiguration 加载整个项目所需的配置
+// 说明：
+//   - 首先尝试从配置文件加载，如果配置文件存在则使用
+//   - 如果配置文件不存在，则从环境变量加载
+//   - 加载配置后，会进行验证，如果验证失败，则会返回错误
+//
+// 返回：
+//   - *types.Config: 加载的配置
+//   - error: 可能的错误
+func LoadConfiguration() (*types.Config, error) {
+	// 首先尝试从配置文件加载
+	configPath := "config.json"
+	// 读取配置文件
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Printf("  📄 从配置文件加载: %s\n", configPath)
+		// 加载配置文件并验证
+		cfg, err := loadConfigFromFile(configPath)
+		if err == nil {
+			return cfg, nil
+		}
+		fmt.Println("  ⚠️  配置文件中的API密钥未设置，尝试环境变量...")
+	} else {
+		fmt.Println("  ⚠️  配置文件不存在，尝试环境变量...")
+	}
 
-	// 扫描 internal/prompt/ 目录下的所有 YAML 文件
-	promptDir := "internal/prompt"
-	files, err := filepath.Glob(filepath.Join(promptDir, "*.yaml"))
+	// 从环境变量加载
+	fmt.Println("  🌍 从环境变量加载配置...")
+	cfg, err := loadConfigFromEnv()
 	if err != nil {
-		return nil, fmt.Errorf("扫描提示词文件失败: %w", err)
+		return nil, fmt.Errorf("从环境变量加载配置失败: %w", err)
 	}
+	// fmt.Printf("  加载的配置：%v", cfg)
 
-	// 遍历所有 YAML 文件
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			fmt.Printf("  ⚠️  读取文件 %s 失败: %v\n", file, err)
-			continue
-		}
-
-		var config PromptConfig
-		if err := yaml.Unmarshal(data, &config); err != nil {
-			fmt.Printf("  ⚠️  解析文件 %s 失败: %v\n", file, err)
-			continue
-		}
-
-		if config.Scene != "" {
-			scenes = append(scenes, config)
-		}
-	}
-
-	return scenes, nil
+	return cfg, nil
 }
 
-// LoadConfig 从JSON文件加载配置
+// loadConfigFromFile 从JSON文件加载配置
 // 参数：
 //   - configPath: 配置文件路径
 //
@@ -76,7 +76,7 @@ func ListAvailableScenes() ([]PromptConfig, error) {
 // 返回：
 //   - *types.Config: 加载的配置
 //   - error: 可能的错误
-func LoadConfig(configPath string) (*types.Config, error) {
+func loadConfigFromFile(configPath string) (*types.Config, error) {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -100,11 +100,15 @@ func LoadConfig(configPath string) (*types.Config, error) {
 	return &config, nil
 }
 
-// LoadConfigFromEnv 从环境变量加载配置
+// loadConfigFromEnv 从环境变量加载配置
+// 说明：
+//
+//   - 加载配置后，会进行验证，如果验证失败，则会返回错误
+//
 // 返回：
 //   - *types.Config: 加载的配置
 //   - error: 可能的错误
-func LoadConfigFromEnv() (*types.Config, error) {
+func loadConfigFromEnv() (*types.Config, error) {
 	config := &types.Config{
 		LLM: types.LLMConfig{
 			Provider: getEnvOrDefault("LLM_PROVIDER", "openai"),
@@ -187,17 +191,17 @@ func validateConfig(config *types.Config) error {
 		return fmt.Errorf("温度参数必须在0-2之间")
 	}
 
-	// 验证工具配置
+	// 验证天气工具配置
 	if config.Tools.Weather.APIKey == "" {
 		return fmt.Errorf("天气API密钥不能为空")
 	}
 
 	if config.Tools.Weather.BaseURL == "" {
-		return fmt.Errorf("天气API基础URL不能为空")
-	}
-
-	if !strings.HasPrefix(config.Tools.Weather.BaseURL, "http://") && !strings.HasPrefix(config.Tools.Weather.BaseURL, "https://") {
-		return fmt.Errorf("天气API基础URL格式不正确")
+		return fmt.Errorf("天气基础URL不能为空")
+	} else {
+		if !strings.HasPrefix(config.Tools.Weather.BaseURL, "http://") && !strings.HasPrefix(config.Tools.Weather.BaseURL, "https://") {
+			return fmt.Errorf("天气API基础URL格式不正确")
+		}
 	}
 
 	return nil
@@ -278,10 +282,10 @@ func GetDefaultConfig() *types.Config {
 		},
 		Tools: types.ToolsConfig{
 			Weather: types.WeatherConfig{
-				Name:    "weather",
-				Desc:    "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等",
+				Name:    "", // 空值，将使用工具默认值
+				Desc:    "", // 空值，将使用工具默认值
 				APIKey:  "your-qweather-api-key-here",
-				BaseURL: "https://devapi.qweather.com/v7",
+				BaseURL: "", // 空值，将使用工具默认值
 			},
 		},
 	}

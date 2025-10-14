@@ -13,22 +13,18 @@ import (
 	"agent-hwan/internal/llm"
 	"agent-hwan/internal/prompt"
 	"agent-hwan/internal/tools"
-	"agent-hwan/pkg/types"
 
 	"github.com/chzyer/readline"
 )
 
 func main() {
 	fmt.Println()
-	fmt.Println("🤖 AI Agent 开发教程")
-	fmt.Println("====================")
-	fmt.Println("欢迎来到 AI Agent 开发教程！")
-	fmt.Println("这个程序将演示如何构建一个完整的 AI Agent 系统。")
+	fmt.Println("========== 🤖 AI Agent 助手 ==========")
 	fmt.Println()
 
 	// 第一步：加载配置
 	fmt.Println("📋 步骤1: 加载配置...")
-	cfg, err := loadConfiguration()
+	cfg, err := config.LoadConfiguration()
 	if err != nil {
 		log.Fatalf("❌ 加载配置失败: %v", err)
 		os.Exit(0)
@@ -44,19 +40,23 @@ func main() {
 	)
 	fmt.Println("✅ LLM客户端创建成功！")
 
-	// 第三步：获取全部的 Prompt 配置
-	fmt.Println("\n📋 步骤3: 获取全部的 Prompt 配置...")
+	// 第三步：注册工具信息
+	fmt.Println("\n🔗 步骤3: 注册工具信息...")
+	toolInfos := tools.NewToolRegistry()
+	fmt.Println("✅ 工具信息注册成功！")
+
+	// 第四步：获取全部的 Prompt 配置
+	fmt.Println("\n📋 步骤4: 获取全部的 Prompt 配置...")
 	prompts, err := prompt.GetPrompts()
 	if err != nil {
 		log.Fatalf("❌ 获取 Prompt 配置失败: %v", err)
 		os.Exit(0)
 	}
 	fmt.Println("✅ Prompt配置获取成功！")
-	fmt.Printf("  配置信息：%v\n", prompts)
 
-	// 第四步：创建AI Agent
-	fmt.Println("\n🧠 步骤4: 创建AI Agent...")
-	systemPrompt, err := prompt.GetSystemPrompt(prompts, &cfg.Tools)
+	// 第五步：创建AI Agent
+	fmt.Println("\n🧠 步骤5: 创建AI Agent...")
+	systemPrompt, err := prompt.GetSystemPrompt(prompts, toolInfos)
 	if err != nil {
 		fmt.Printf("  ❌ 获取系统提示失败: \n%v\n", err)
 		os.Exit(0)
@@ -70,64 +70,15 @@ func main() {
 	)
 	fmt.Printf("✅ AI Agent '%s' 创建成功！\n", cfg.Agent.Name)
 
-	// 第五步：添加工具
-	fmt.Println("\n🔧 步骤5: 添加工具...")
-	setupTools(aiAgent, cfg)
+	// 第六步：添加工具
+	fmt.Println("\n🔧 步骤6: 添加工具...")
+	tools.SetupTools(aiAgent, cfg)
 	fmt.Println("✅ 所有工具添加完成！")
 
-	// 第六步：开始交互
-	fmt.Println("\n🎯 步骤6: 开始交互...")
+	// 第七步：开始交互
+	fmt.Println("\n🎯 步骤7: 开始交互...")
+	fmt.Println("================ END ================")
 	startInteractiveSession(aiAgent)
-}
-
-// loadConfiguration 加载配置
-func loadConfiguration() (*types.Config, error) {
-	// 首先尝试从配置文件加载
-	configPath := "config.json"
-	// 读取配置文件
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("  📄 从配置文件加载: %s\n", configPath)
-		// 加载配置文件并验证
-		cfg, err := config.LoadConfig(configPath)
-		if err == nil {
-			return cfg, nil
-		}
-		fmt.Println("  ⚠️  配置文件中的API密钥未设置，尝试环境变量...")
-	} else {
-		fmt.Println("  ⚠️  配置文件不存在，尝试环境变量...")
-	}
-
-	// 从环境变量加载
-	fmt.Println("  🌍 从环境变量加载配置...")
-	cfg, err := config.LoadConfigFromEnv()
-	if err != nil {
-		return nil, fmt.Errorf("从环境变量加载配置失败: %w", err)
-	}
-	// fmt.Printf("  加载的配置：%v", cfg)
-
-	return cfg, nil
-}
-
-// setupTools 设置工具
-func setupTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
-	// 添加计算器工具
-	fmt.Println("  ➕ 添加计算器工具...")
-	calculatorTool := tools.NewCalculatorTool("", "")
-	aiAgent.AddTool(calculatorTool)
-	fmt.Println("     ✓ 计算器工具已添加")
-
-	// 添加天气工具
-	fmt.Println("  🌤️  添加天气工具...")
-	weatherTool := tools.NewWeatherTool(cfg.Tools.Weather.Name,
-		cfg.Tools.Weather.Desc,
-		cfg.Tools.Weather.APIKey,
-		cfg.Tools.Weather.BaseURL)
-	aiAgent.AddTool(weatherTool)
-	fmt.Println("     ✓ 天气工具已添加")
-
-	// 显示工具统计
-	tools := aiAgent.GetTools()
-	fmt.Printf("  📊 总共添加了 %d 个工具\n", len(tools))
 }
 
 // startInteractiveSession 开始交互会话
@@ -296,7 +247,7 @@ func showHistory(aiAgent *agent.BasicAgent) {
 			i+1,
 			roleIcon,
 			roleName,
-			truncateMessage(msg.Content, 128))
+			truncateMessage(msg.Content, 256))
 
 		// 如果有工具调用，显示工具调用信息
 		if len(msg.ToolCalls) > 0 {
