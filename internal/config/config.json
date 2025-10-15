@@ -29,7 +29,7 @@
       "base_url": "test_whr_url"
     },
     "ip":{
-      "access_key": "test_access_key"
+      "access_key": "test_ip_key"
     }
   }
 }

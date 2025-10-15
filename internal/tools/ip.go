@@ -136,7 +136,7 @@ func (i *IPTool) Parameters() map[string]interface{} {
 				"description": "查询与IP地址相关的各种信息，包括常规信息、位置数据、时区数据、货币数据、连接数据和安全数据。",
 			},
 		},
-		"required": []string{"ip"},
+		"required": []string{"target"},
 	}
 }
 
