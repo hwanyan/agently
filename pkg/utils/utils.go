@@ -2,9 +2,12 @@
 package utils
 
 import (
+	"compress/gzip"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -70,6 +73,23 @@ func FormatDuration(d time.Duration) string {
 	} else {
 		return fmt.Sprintf("%.1fh", d.Hours())
 	}
+}
+
+// ReadResponseBody 读取并解压缩响应体
+func ReadResponseBody(resp *http.Response) ([]byte, error) {
+	var reader io.Reader = resp.Body
+
+	// 检查是否是gzip压缩
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gzipReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("创建gzip读取器失败: %w", err)
+		}
+		defer gzipReader.Close()
+		reader = gzipReader
+	}
+
+	return io.ReadAll(reader)
 }
 
 // SanitizeInput 清理用户输入

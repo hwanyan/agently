@@ -91,6 +91,8 @@ func startInteractiveSession(aiAgent *agent.BasicAgent) {
 	fmt.Println("   • 北京的天气怎么样？")
 	fmt.Println("   • 帮我计算 15 * 8 - 20")
 	fmt.Println("   • 上海今天天气如何？")
+	fmt.Println("   • 查询 8.8.8.8 的IP信息")
+	fmt.Println("   • 查询 google.com 的位置")
 	fmt.Println("   • 什么是AI Agent？")
 	fmt.Println()
 	fmt.Println("🔧 可用命令：")
@@ -138,31 +140,31 @@ func startInteractiveSession(aiAgent *agent.BasicAgent) {
 		fmt.Print("正在思考...")
 
 		// // 方式一：非流式响应接口的处理逻辑
-		// // 调用Agent处理消息
-		// response, err := aiAgent.ProcessMessage(ctx, userInput)
-		// if err != nil {
-		// 	// 清除"正在思考..."并显示错误（注：/r 的作用是将光标移动到当前行的行首，但不会换行，即实现同一行的覆盖式更新）
-		// 	fmt.Printf("\r🤖 助手: ❌ 处理消息时出错: %v\n", err)
-		// 	continue
-		// }
-		// // 清除"正在思考..."并显示响应
-		// fmt.Print("\r🤖 助手: ")
-		// fmt.Println(response)
-
-		// 方式二：流式响应接口的处理逻辑
-		// 调用Agent处理消息（流式）
-		responseStream, err := aiAgent.ProcessMessageStream(ctx, userInput)
+		// 调用Agent处理消息
+		response, err := aiAgent.ProcessMessage(ctx, userInput)
 		if err != nil {
 			// 清除"正在思考..."并显示错误（注：/r 的作用是将光标移动到当前行的行首，但不会换行，即实现同一行的覆盖式更新）
 			fmt.Printf("\r🤖 助手: ❌ 处理消息时出错: %v\n", err)
 			continue
 		}
-		// 清除"正在思考..."并开始流式输出
+		// 清除"正在思考..."并显示响应
 		fmt.Print("\r🤖 助手: ")
-		// 读取并显示流式响应
-		for chunk := range responseStream {
-			fmt.Print(chunk)
-		}
+		fmt.Println(response)
+
+		// 方式二：流式响应接口的处理逻辑
+		// 调用Agent处理消息（流式）
+		// responseStream, err := aiAgent.ProcessMessageStream(ctx, userInput)
+		// if err != nil {
+		// 	// 清除"正在思考..."并显示错误（注：/r 的作用是将光标移动到当前行的行首，但不会换行，即实现同一行的覆盖式更新）
+		// 	fmt.Printf("\r🤖 助手: ❌ 处理消息时出错: %v\n", err)
+		// 	continue
+		// }
+		// // 清除"正在思考..."并开始流式输出
+		// fmt.Print("\r🤖 助手: ")
+		// // 读取并显示流式响应
+		// for chunk := range responseStream {
+		// 	fmt.Print(chunk)
+		// }
 
 		fmt.Println() // 换行
 	}
@@ -211,6 +213,7 @@ func showHelp() {
 	fmt.Println("🔧 **可用工具**:")
 	fmt.Println("   • 计算器 - 执行数学运算")
 	fmt.Println("   • 天气查询 - 查询城市天气信息")
+	fmt.Println("   • IP查询 - 查询IP地址地理位置信息")
 	fmt.Println()
 	fmt.Println("⌨️  **命令**:")
 	fmt.Println("   • 'help' - 显示此帮助信息")
@@ -222,7 +225,9 @@ func showHelp() {
 	fmt.Println("💡 **示例问题**:")
 	fmt.Println("   • 计算 25 * 4 + 10")
 	fmt.Println("   • 北京今天天气怎么样？")
+	fmt.Println("   • 查询 8.8.8.8 的IP信息")
 	fmt.Println("   • 帮我算一下 100 除以 8")
+	fmt.Println("   • 查询 google.com 的位置")
 	fmt.Println("   • 什么是人工智能？")
 	fmt.Println(strings.Repeat("-", 40))
 }

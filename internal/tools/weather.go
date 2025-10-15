@@ -1,15 +1,15 @@
 package tools
 
 import (
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"agent-hwan/pkg/utils"
 )
 
 // 天气工具配置常量（定制化内容）
@@ -20,23 +20,6 @@ const (
 	// WeatherToolDesc 默认天气工具描述
 	WeatherToolDesc = "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等。支持英文字母缩写，如：beijing、shanghai、guangzhou 等。"
 )
-
-// readResponseBody 读取并解压缩响应体
-func readResponseBody(resp *http.Response) ([]byte, error) {
-	var reader io.Reader = resp.Body
-
-	// 检查是否是gzip压缩
-	if resp.Header.Get("Content-Encoding") == "gzip" {
-		gzipReader, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("创建gzip读取器失败: %w", err)
-		}
-		defer gzipReader.Close()
-		reader = gzipReader
-	}
-
-	return io.ReadAll(reader)
-}
 
 // WeatherTool 天气查询工具
 // 基于和风天气API实现
@@ -221,7 +204,7 @@ func (w *WeatherTool) getCityLocation(ctx context.Context, city string) (string,
 	}
 
 	// 读取并解压缩响应体
-	body, err := readResponseBody(resp)
+	body, err := utils.ReadResponseBody(resp)
 	if err != nil {
 		fmt.Printf("    ❌ 读取响应体失败: %v\n", err)
 		return "", nil, fmt.Errorf("读取响应体失败: %w", err)
@@ -301,7 +284,7 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 	}
 
 	// 读取并解压缩响应体
-	body, err := readResponseBody(resp)
+	body, err := utils.ReadResponseBody(resp)
 	if err != nil {
 		fmt.Printf("    ❌ 读取响应体失败: %v\n", err)
 		return nil, fmt.Errorf("读取响应体失败: %w", err)

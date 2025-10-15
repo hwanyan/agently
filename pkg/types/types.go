@@ -111,15 +111,19 @@ type AgentConfig struct {
 
 // WeatherConfig 天气工具配置
 type WeatherConfig struct {
-	Name    string `json:"name"`        // 工具名称
-	Desc    string `json:"description"` // 工具描述
-	APIKey  string `json:"api_key"`     // 和风天气API密钥
-	BaseURL string `json:"base_url"`    // 和风天气API基础URL
+	APIKey  string `json:"api_key"`  // 和风天气API密钥
+	BaseURL string `json:"base_url"` // 和风天气API基础URL
+}
+
+// IPToolConfig IP工具配置
+type IPToolConfig struct {
+	AccessKey string `json:"access_key"` // IP地址查询 access key
 }
 
 // ToolsConfig 工具配置
 type ToolsConfig struct {
 	Weather WeatherConfig `json:"weather"` // 天气工具配置
+	IP      IPToolConfig  `json:"ip"`      // IP工具配置
 }
 
 // Config 应用程序总配置

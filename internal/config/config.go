@@ -124,10 +124,11 @@ func loadConfigFromEnv() (*types.Config, error) {
 		},
 		Tools: types.ToolsConfig{
 			Weather: types.WeatherConfig{
-				Name:    os.Getenv("WEATHER_NAME"),
-				Desc:    os.Getenv("WEATHER_DESC"),
 				APIKey:  os.Getenv("WEATHER_API_KEY"),
 				BaseURL: os.Getenv("WEATHER_BASE_URL"),
+			},
+			IP: types.IPToolConfig{
+				AccessKey: os.Getenv("IPAPI_ACCESS_KEY"),
 			},
 		},
 	}
@@ -261,53 +262,6 @@ func getEnvFloatOrDefault(key string, defaultValue float64) float64 {
 		}
 	}
 	return defaultValue
-}
-
-// GetDefaultConfig 获取默认配置
-// 返回：
-//   - *types.Config: 默认配置
-func GetDefaultConfig() *types.Config {
-	return &types.Config{
-		LLM: types.LLMConfig{
-			Provider: "openai",
-			APIKey:   "your-openai-api-key-here",
-			Model:    "gpt-3.5-turbo",
-			BaseURL:  "",
-		},
-		Agent: types.AgentConfig{
-			Name:        "智能助手",
-			Description: "一个能够使用工具的智能AI助手",
-			MaxTokens:   4096,
-			Temperature: 0.7,
-		},
-		Tools: types.ToolsConfig{
-			Weather: types.WeatherConfig{
-				Name:    "", // 空值，将使用工具默认值
-				Desc:    "", // 空值，将使用工具默认值
-				APIKey:  "your-qweather-api-key-here",
-				BaseURL: "", // 空值，将使用工具默认值
-			},
-		},
-	}
-}
-
-// CreateDefaultConfigFile 创建默认配置文件
-// 参数：
-//   - configPath: 配置文件路径
-//
-// 返回：
-//   - error: 可能的错误
-func CreateDefaultConfigFile(configPath string) error {
-	// 检查文件是否已存在
-	if _, err := os.Stat(configPath); err == nil {
-		return fmt.Errorf("配置文件已存在: %s", configPath)
-	}
-
-	// 获取默认配置
-	config := GetDefaultConfig()
-
-	// 保存到文件
-	return SaveConfig(config, configPath)
 }
 
 // UpdateConfig 更新配置中的特定字段

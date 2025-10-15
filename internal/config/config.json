@@ -25,10 +25,11 @@
   },
   "tools": {
     "weather": {
-      "name": "qweather",
-      "description": "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等",
       "api_key": "test_whr_key",
       "base_url": "test_whr_url"
+    },
+    "ip":{
+      "access_key": "test_access_key"
     }
   }
 }

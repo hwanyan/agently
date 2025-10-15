@@ -26,6 +26,11 @@ func (r *ToolRegistry) GetAvailableTools() []ToolInfo {
 			Description: WeatherToolDesc,
 			Arguments:   getWeatherArguments(),
 		},
+		{
+			Name:        IPToolName,
+			Description: IPToolDesc,
+			Arguments:   getIPArguments(),
+		},
 	}
 }
 
@@ -33,6 +38,17 @@ func (r *ToolRegistry) GetAvailableTools() []ToolInfo {
 func getWeatherArguments() string {
 	weatherTool := &WeatherTool{}
 	paramsJSON, err := json.MarshalIndent(weatherTool.Parameters(), "", "  ")
+	if err != nil {
+		return fmt.Sprintf("参数格式化失败: %v", err)
+	} else {
+		return fmt.Sprintf("参数结构:\n%s", string(paramsJSON))
+	}
+}
+
+// getIPArguments 获取IP查询工具的参数描述
+func getIPArguments() string {
+	ipTool := NewIPTool("") // 这里只是为了获取参数描述，不需要真实的访问密钥
+	paramsJSON, err := json.MarshalIndent(ipTool.Parameters(), "", "  ")
 	if err != nil {
 		return fmt.Sprintf("参数格式化失败: %v", err)
 	} else {

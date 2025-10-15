@@ -1,3 +1,2 @@
 setup-env.sh
-
-cmd/config.json
+internal/config/config.json
