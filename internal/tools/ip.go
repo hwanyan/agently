@@ -15,7 +15,7 @@ import (
 
 // IP地址查询工具默认配置常量
 const (
-	// IPToolName 默认IP工具名称
+	// IPToolName 默认IP工具名称（工具名称需保持英文）
 	IPToolName = "ipapi"
 
 	// IPToolDesc 默认IP工具描述

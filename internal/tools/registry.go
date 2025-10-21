@@ -31,6 +31,11 @@ func (r *ToolRegistry) GetAvailableTools() []ToolInfo {
 			Description: IPToolDesc,
 			Arguments:   getIPArguments(),
 		},
+		{
+			Name:        QRCodeToolName,
+			Description: QRCodeToolDesc,
+			Arguments:   getQRCodeArguments(),
+		},
 	}
 }
 
@@ -49,6 +54,17 @@ func getWeatherArguments() string {
 func getIPArguments() string {
 	ipTool := &IPTool{}
 	paramsJSON, err := json.MarshalIndent(ipTool.Parameters(), "", "  ")
+	if err != nil {
+		return fmt.Sprintf("参数格式化失败: %v", err)
+	} else {
+		return fmt.Sprintf("参数结构:\n%s", string(paramsJSON))
+	}
+}
+
+// getQRCodeArguments 获取二维码工具的参数描述
+func getQRCodeArguments() string {
+	qrTool := &QRCodeTool{}
+	paramsJSON, err := json.MarshalIndent(qrTool.Parameters(), "", "  ")
 	if err != nil {
 		return fmt.Sprintf("参数格式化失败: %v", err)
 	} else {
