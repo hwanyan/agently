@@ -112,7 +112,10 @@ agent-hwan/
 │   │   └── prompt.yaml          # 系统提示词配置
 │   └── tools/                    # 工具实现
 │       ├── weather.go           # 天气查询工具（和风天气API）
-│       └── ip.go                # IP地址查询工具（ipapi.com API）
+│       ├── ip.go                # IP地址查询工具（ipapi.com API）
+│       ├── qrcode.go            # 二维码生成工具
+│       ├── translation.go       # 翻译工具（LibreTranslate API）
+│       └── registry.go          # 工具注册表
 ├── README/                       # 项目文档
 │   ├── 问题答疑.md               # 技术问答文档
 │   ├── 使用指南.md               # 详细使用指南
@@ -145,6 +148,9 @@ agent-hwan/
 #### 6. 工具系统 (`internal/tools/`)
 - `weather.go`: 天气查询工具，集成和风天气API
 - `ip.go`: IP地址查询工具，集成ipapi.com API
+- `qrcode.go`: 二维码生成工具，支持多种输出格式
+- `translation.go`: 翻译工具，集成LibreTranslate API
+- `registry.go`: 工具注册表，统一管理所有工具
 
 #### 7. 项目文档 (`README/`)
 - `问题答疑.md`: 技术决策和常见问题解答
@@ -186,6 +192,10 @@ export QWEATHER_API_KEY="your-qweather-api-key"
 
 # IP查询API密钥（可选）
 export IPAPI_ACCESS_KEY="your-ipapi-access-key"
+
+# 翻译工具配置（可选）
+export TRANSLATE_BASE_URL="https://libretranslate.com"  # 翻译服务地址，默认使用公共实例
+export TRANSLATE_API_KEY="your-translate-api-key"       # 翻译API密钥，使用付费服务时需要
 ```
 
 **方式二：配置文件**

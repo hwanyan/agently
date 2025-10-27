@@ -230,6 +230,8 @@ func showHelp() {
 	fmt.Println("   • 生成一个内容为 https://example.com 的二维码（默认 dataurl）")
 	fmt.Println("   • 请在终端展示这个二维码（使用 ascii 输出）")
 	fmt.Println("   • 请将这个二维码保存为 png 图片，文件名设为 my_qr.png（使用 file 输出）")
+	fmt.Println("   • 请把\"今天天气不错，适合散步。\"翻译为英文")
+	fmt.Println("   • 把 \"Bonjour tout le monde\" 翻成中文")
 	fmt.Println("   • 什么是人工智能？")
 	fmt.Println(strings.Repeat("-", 40))
 }
