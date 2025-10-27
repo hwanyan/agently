@@ -36,6 +36,11 @@ func (r *ToolRegistry) GetAvailableTools() []ToolInfo {
 			Description: QRCodeToolDesc,
 			Arguments:   getQRCodeArguments(),
 		},
+		{
+			Name:        TranslationToolName,
+			Description: TranslationToolDesc,
+			Arguments:   getTranslationArguments(),
+		},
 	}
 }
 
@@ -65,6 +70,17 @@ func getIPArguments() string {
 func getQRCodeArguments() string {
 	qrTool := &QRCodeTool{}
 	paramsJSON, err := json.MarshalIndent(qrTool.Parameters(), "", "  ")
+	if err != nil {
+		return fmt.Sprintf("参数格式化失败: %v", err)
+	} else {
+		return fmt.Sprintf("参数结构:\n%s", string(paramsJSON))
+	}
+}
+
+// getTranslationArguments 获取翻译工具的参数描述
+func getTranslationArguments() string {
+	trTool := &TranslationTool{}
+	paramsJSON, err := json.MarshalIndent(trTool.Parameters(), "", "  ")
 	if err != nil {
 		return fmt.Sprintf("参数格式化失败: %v", err)
 	} else {

@@ -30,6 +30,9 @@
     },
     "ip":{
       "access_key": "test_ip_key"
+    },
+    "translate": {
+      "api_key": "test_trans_key"
     }
   }
 }

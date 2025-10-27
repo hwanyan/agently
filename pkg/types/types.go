@@ -120,10 +120,17 @@ type IPToolConfig struct {
 	AccessKey string `json:"access_key"` // IP地址查询 access key
 }
 
+// TranslateConfig 翻译工具配置
+type TranslateConfig struct {
+	APIKey  string `json:"api_key"`  // 翻译API密钥
+	BaseURL string `json:"base_url"` // 翻译API基础URL
+}
+
 // ToolsConfig 工具配置
 type ToolsConfig struct {
-	Weather WeatherConfig `json:"weather"` // 天气工具配置
-	IP      IPToolConfig  `json:"ip"`      // IP工具配置
+	Weather   WeatherConfig   `json:"weather"`   // 天气工具配置
+	IP        IPToolConfig    `json:"ip"`        // IP工具配置
+	Translate TranslateConfig `json:"translate"` // 翻译工具配置
 }
 
 // Config 应用程序总配置

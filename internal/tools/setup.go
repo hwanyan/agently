@@ -26,6 +26,12 @@ func SetupTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
 	aiAgent.AddTool(qrTool)
 	fmt.Println("    ✓ 二维码生成工具已添加")
 
+	// 添加翻译工具
+	fmt.Println("    🔡 添加翻译工具...")
+	trTool := NewTranslationTool(cfg.Tools.Translate.APIKey, cfg.Tools.Translate.BaseURL)
+	aiAgent.AddTool(trTool)
+	fmt.Println("    ✓ 翻译工具已添加")
+
 	// 显示工具统计
 	tools := aiAgent.GetTools()
 	fmt.Printf("  📊 总共添加了 %d 个工具\n", len(tools))
