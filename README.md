@@ -6,7 +6,7 @@
 2. IP信息查询工具 🌍
 3. 二维码生成工具 🔢
 4. 翻译工具 🔡
-5. 文本处理工具 ✏️（待实现）
+5. 文本处理工具 ✏️
 6. 短链接生成工具 🔗（待实现）
 7. 图片处理工具 🖼️（待实现）
 
@@ -115,6 +115,7 @@ agent-hwan/
 │       ├── ip.go                # IP地址查询工具（ipapi.com API）
 │       ├── qrcode.go            # 二维码生成工具
 │       ├── translation.go       # 翻译工具（LibreTranslate API）
+│       ├── textprocessor.go     # 文本处理工具
 │       └── registry.go          # 工具注册表
 ├── README/                       # 项目文档
 │   ├── 问题答疑.md               # 技术问答文档
@@ -150,6 +151,7 @@ agent-hwan/
 - `ip.go`: IP地址查询工具，集成ipapi.com API
 - `qrcode.go`: 二维码生成工具，支持多种输出格式
 - `translation.go`: 翻译工具，集成LibreTranslate API
+- `textprocessor.go`: 文本处理工具，提供文本统计、格式转换、内容提取等功能
 - `registry.go`: 工具注册表，统一管理所有工具
 
 #### 7. 项目文档 (`README/`)

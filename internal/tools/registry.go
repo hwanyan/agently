@@ -41,6 +41,11 @@ func (r *ToolRegistry) GetAvailableTools() []ToolInfo {
 			Description: TranslationToolDesc,
 			Arguments:   getTranslationArguments(),
 		},
+		{
+			Name:        TextProcessorToolName,
+			Description: TextProcessorToolDesc,
+			Arguments:   getTextProcessorArguments(),
+		},
 	}
 }
 
@@ -81,6 +86,17 @@ func getQRCodeArguments() string {
 func getTranslationArguments() string {
 	trTool := &TranslationTool{}
 	paramsJSON, err := json.MarshalIndent(trTool.Parameters(), "", "  ")
+	if err != nil {
+		return fmt.Sprintf("参数格式化失败: %v", err)
+	} else {
+		return fmt.Sprintf("参数结构:\n%s", string(paramsJSON))
+	}
+}
+
+// getTextProcessorArguments 获取文本处理工具的参数描述
+func getTextProcessorArguments() string {
+	textTool := &TextProcessorTool{}
+	paramsJSON, err := json.MarshalIndent(textTool.Parameters(), "", "  ")
 	if err != nil {
 		return fmt.Sprintf("参数格式化失败: %v", err)
 	} else {
