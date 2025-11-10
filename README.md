@@ -7,7 +7,7 @@
 3. 二维码生成工具 🔢
 4. 翻译工具 🔡
 5. 文本处理工具 ✏️
-6. 短链接生成工具 🔗（待实现）
+6. 短链接生成工具 🔗
 7. 图片处理工具 🖼️（待实现）
 
 ## 📦 工具总揽
@@ -80,6 +80,53 @@
 - HTML：将 <p>你好，世界</p> 翻译为英文，并保持 HTML 结构
 
 
+5. 文本处理工具 ✏️
+
+- 工具名：textprocessor
+- 功能：提供文本统计、格式转换、内容提取、文本生成等多种文本处理功能
+- 典型场景：文本分析、格式化处理、数据提取、随机内容生成
+
+参数
+- action（必需）：操作类型，支持以下选项：
+  - stats：文本统计（字符数、单词数、行数等）
+  - uppercase/lowercase/title：大小写转换
+  - trim：去除首尾空格
+  - reverse：反转文本
+  - extract：内容提取（邮箱、URL、数字等）
+  - generate：文本生成（UUID、密码等）
+  - replace：文本替换
+  - split/join：文本分割和连接
+- text（可选）：要处理的文本内容（generate操作时可选）
+- pattern（可选）：提取或替换模式（email、url、number等）
+- generate_type（可选）：生成类型（uuid、password等）
+- length（可选）：生成长度，默认12，范围4-128
+
+示例
+- 文本统计：分析这段文本："Hello World"
+- 格式转换：将"hello world"转换为大写
+- 内容提取：从这段文本中提取所有邮箱地址
+- 生成密码：生成一个16位的随机密码
+- 生成UUID：生成一个标准UUID
+
+
+6. 短链接生成工具 🔗
+
+- 工具名：shorturl
+- 功能：将长URL转换为短链接，支持多种短链接服务提供商（TinyURL、is.gd、v.gd）
+- 典型场景：URL分享、链接美化、社交媒体发布、二维码生成
+
+参数
+- url（必需）：需要缩短的长URL地址（必须是有效的HTTP/HTTPS URL）
+- service（可选，默认 tinyurl）：短链接服务提供商
+  - tinyurl：TinyURL服务（https://tinyurl.com）
+  - isgd：is.gd服务，支持自定义别名
+  - vgd：v.gd服务，is.gd的替代服务
+- custom_alias（可选）：自定义短链接别名（部分服务支持）
+
+示例
+- 基础使用：请帮我缩短这个链接：https://www.example.com/very/long/url/path
+- 指定服务：使用 is.gd 服务生成短链接：https://github.com/example/repo
+- 自定义别名：用 is.gd 生成短链接，别名设为 mylink
 
 
 
@@ -116,6 +163,7 @@ agent-hwan/
 │       ├── qrcode.go            # 二维码生成工具
 │       ├── translation.go       # 翻译工具（LibreTranslate API）
 │       ├── textprocessor.go     # 文本处理工具
+│       ├── shorturl.go          # 短链接生成工具
 │       └── registry.go          # 工具注册表
 ├── README/                       # 项目文档
 │   ├── 问题答疑.md               # 技术问答文档
@@ -152,6 +200,7 @@ agent-hwan/
 - `qrcode.go`: 二维码生成工具，支持多种输出格式
 - `translation.go`: 翻译工具，集成LibreTranslate API
 - `textprocessor.go`: 文本处理工具，提供文本统计、格式转换、内容提取等功能
+- `shorturl.go`: 短链接生成工具，支持多种短链接服务提供商
 - `registry.go`: 工具注册表，统一管理所有工具
 
 #### 7. 项目文档 (`README/`)
@@ -198,6 +247,10 @@ export IPAPI_ACCESS_KEY="your-ipapi-access-key"
 # 翻译工具配置（可选）
 export TRANSLATE_BASE_URL="https://libretranslate.com"  # 翻译服务地址，默认使用公共实例
 export TRANSLATE_API_KEY="your-translate-api-key"       # 翻译API密钥，使用付费服务时需要
+
+# 短链接工具配置（可选）
+export SHORTURL_BASE_URL="https://tinyurl.com/api-create.php"  # 短链接服务地址，默认使用TinyURL
+export SHORTURL_API_KEY=""                                       # 短链接API密钥（大多数免费服务不需要）
 ```
 
 **方式二：配置文件**

@@ -130,6 +130,14 @@ func loadConfigFromEnv() (*types.Config, error) {
 			IP: types.IPToolConfig{
 				AccessKey: os.Getenv("IPAPI_ACCESS_KEY"),
 			},
+			Translate: types.TranslateConfig{
+				APIKey:  os.Getenv("TRANSLATE_API_KEY"),
+				BaseURL: getEnvOrDefault("TRANSLATE_BASE_URL", "https://libretranslate.com"),
+			},
+			ShortURL: types.ShortURLConfig{
+				APIKey:  os.Getenv("SHORTURL_API_KEY"),
+				BaseURL: os.Getenv("SHORTURL_BASE_URL"),
+			},
 		},
 	}
 

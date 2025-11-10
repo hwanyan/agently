@@ -38,6 +38,12 @@ func SetupTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
 	aiAgent.AddTool(textTool)
 	fmt.Println("    ✓ 文本处理工具已添加")
 
+	// 添加短链接生成工具
+	fmt.Println("    🔗 添加短链接生成工具...")
+	shortURLTool := NewShortURLTool(cfg.Tools.ShortURL.APIKey, cfg.Tools.ShortURL.BaseURL)
+	aiAgent.AddTool(shortURLTool)
+	fmt.Println("    ✓ 短链接生成工具已添加")
+
 	// 显示工具统计
 	tools := aiAgent.GetTools()
 	fmt.Printf("  📊 总共添加了 %d 个工具\n", len(tools))

@@ -222,6 +222,7 @@ func showHelp() {
 	fmt.Println("   • 二维码生成 - 生成二维码（dataurl/ascii/file）")
 	fmt.Println("   • 翻译工具 - 多语言文本翻译")
 	fmt.Println("   • 文本处理 - 文本统计、格式转换、内容提取等")
+	fmt.Println("   • 短链接生成 - 将长URL转换为短链接")
 	fmt.Println()
 	fmt.Println("⌨️  **命令**:")
 	fmt.Println("   • 'help' - 显示此帮助信息")
@@ -242,6 +243,8 @@ func showHelp() {
 	fmt.Println("   • 统计这段文字的字符数：\"Hello World\"")
 	fmt.Println("   • 把 \"hello world\" 转换为大写")
 	fmt.Println("   • 从这段文字中提取邮箱地址：\"联系我：john@example.com\"")
+	fmt.Println("   • 帮我缩短这个链接：https://github.com/example/repository")
+	fmt.Println("   • 使用 is.gd 服务生成短链接：https://www.example.com")
 	fmt.Println("   • 什么是人工智能？")
 	fmt.Println(strings.Repeat("-", 40))
 }

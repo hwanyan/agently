@@ -46,6 +46,11 @@ func (r *ToolRegistry) GetAvailableTools() []ToolInfo {
 			Description: TextProcessorToolDesc,
 			Arguments:   getTextProcessorArguments(),
 		},
+		{
+			Name:        ShortURLToolName,
+			Description: ShortURLToolDesc,
+			Arguments:   getShortURLArguments(),
+		},
 	}
 }
 
@@ -97,6 +102,17 @@ func getTranslationArguments() string {
 func getTextProcessorArguments() string {
 	textTool := &TextProcessorTool{}
 	paramsJSON, err := json.MarshalIndent(textTool.Parameters(), "", "  ")
+	if err != nil {
+		return fmt.Sprintf("参数格式化失败: %v", err)
+	} else {
+		return fmt.Sprintf("参数结构:\n%s", string(paramsJSON))
+	}
+}
+
+// getShortURLArguments 获取短链接工具的参数描述
+func getShortURLArguments() string {
+	shortURLTool := NewShortURLTool("", "")
+	paramsJSON, err := json.MarshalIndent(shortURLTool.Parameters(), "", "  ")
 	if err != nil {
 		return fmt.Sprintf("参数格式化失败: %v", err)
 	} else {
