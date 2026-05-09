@@ -1,674 +1,264 @@
-# Agent-Hwan 项目
+# Agent-Hwan
 
-这是一个完整的基于 Go 实现的 AI Agent 项目，它含有多个 AI 工具，包括：
+一个基于 Go 实现的 AI Agent 项目，支持流式对话、自动工具调用、日志系统和灵活的 YAML 配置管理。
 
-1. 天气查询工具 ☁️
-2. IP信息查询工具 🌍
-3. 二维码生成工具 🔢
-4. 翻译工具 🔡
-5. 文本处理工具 ✏️
-6. 短链接生成工具 🔗
-7. 图片处理工具 🖼️（待实现）
+## ✨ 核心特性
 
-## 📦 工具总览
+- 🤖 **智能对话** — 基于 OpenAI/DeepSeek 等大语言模型进行自然语言交互
+- 🔧 **自动工具调用** — Agent 自动识别意图并调用外部工具完成任务
+- 🌊 **流式响应** — 支持流式输出，实时展示 AI 回答，流式模式下同样支持工具调用
+- 📝 **日志系统** — 统一的日志管理（INFO/ERROR/WARNING → 文件）
+- ⚙️ **YAML 配置** — 统一使用 `config.yaml` 管理所有配置项
+- 🔒 **并发安全** — 使用互斥锁 + channel 机制保护对话历史的并发访问
+- 💬 **对话管理** — 完整的对话历史管理和上下文维护
 
-1. 天气查询工具 ☁️
+## 📦 内置工具
 
-- 工具名：qweather
-- 功能：查询指定城市的当前天气信息，包括温度、湿度、风力、天气状况等
-- 典型场景：查询北京/上海等城市的实时天气、风向风速、能见度等
+| # | 工具名 | 功能 | 依赖服务 |
+|---|--------|------|----------|
+| 1 | `qweather` ☁️ | 查询城市实时天气（温度、湿度、风力等） | 和风天气 API |
+| 2 | `ipapi` 🌍 | 查询 IP/域名的地理位置与网络信息 | ipapi.com |
+| 3 | `qrcode` 🔢 | 生成二维码（dataurl / ascii / file） | 本地生成 |
+| 4 | `translate` 🔡 | 多语言文本翻译 | LibreTranslate |
+| 5 | `textprocessor` ✏️ | 文本统计、格式转换、内容提取、文本生成 | 本地处理 |
+| 6 | `shorturl` 🔗 | 长 URL 转短链接（TinyURL / is.gd / v.gd） | 第三方短链接服务 |
 
-参数
-- city（必需）：要查询的城市名称，支持中文或拼音（例如 北京 / beijing）
-
-示例
-- “北京今天天气怎么样？”
-- “上海今天天气如何？”
-
-
-2. IP信息查询工具 🌍
-
-- 工具名：ipapi
-- 功能：查询与 IP 或域名相关的地理位置与网络信息（国家/地区/城市/经纬度/运营商等）；付费版可返回时区、货币、连接与安全信息
-- 典型场景：定位 IP 地址来源、查询域名的归属与运营商信息
-
-参数
-- target（必需）：要查询的 IP 地址或域名（例如 8.8.8.8 / google.com）
-
-示例
-- “查询 8.8.8.8 的IP信息”
-- “查询 google.com 的位置”
-
-3. 二维码生成工具 🔢
-
-- 工具名：qrcode
-- 功能：将文本内容生成二维码，支持三种输出方式：
-  - dataurl：返回 PNG 的 Base64 Data URL，便于在网页中直接显示
-  - ascii：在终端中以字符画方式预览二维码
-  - file：将二维码保存为 PNG 文件
-- 典型场景：分享链接、在终端预览二维码、保存二维码图片分发或嵌入文档
-
-参数
-- text（必需）：要编码为二维码的文本/URL
-- size（可选，默认 256）：二维码图片尺寸（像素，64~1024）
-- level（可选，默认 M）：容错级别，L/M/Q/H
-- margin（可选，默认 4）：边距像素
-- output（可选，默认 dataurl）：输出格式，可选 dataurl | ascii | file
-- filename（可选）：当 output=file 时保存的文件名（如 qr.png）
-
-示例
-- 生成 Data URL：生成一个内容为 https://example.com 的二维码
-- 终端预览：请在终端展示这个二维码（将采用 ascii 输出）
-- 保存文件：请将这个二维码保存为 png 图片，文件名设为 my_qr.png
-
-
-4. 翻译工具 🔡
-
-- 工具名：translate
-- 功能：将给定文本翻译为指定目标语言，支持可选源语言与格式（plain/html）。基于 LibreTranslate API。
-- 典型场景：中英互译、技术文档段落翻译、HTML 片段翻译
-
-参数
-- text（必需）：需要翻译的原文文本
-- target（必需）：目标语言代码（如 zh, en, ja, ko, fr, de, es 等）
-- source（可选）：源语言代码，不传则自动检测
-- format（可选，默认 plain）：文本格式 plain | html
-
-示例
-- 中译英：请把“今天天气不错，适合散步。”翻译为英文
-- 自动检测：把 “Bonjour tout le monde” 翻成中文
-- HTML：将 <p>你好，世界</p> 翻译为英文，并保持 HTML 结构
-
-
-5. 文本处理工具 ✏️
-
-- 工具名：textprocessor
-- 功能：提供文本统计、格式转换、内容提取、文本生成等多种文本处理功能
-- 典型场景：文本分析、格式化处理、数据提取、随机内容生成
-
-参数
-- action（必需）：操作类型，支持以下选项：
-  - stats：文本统计（字符数、单词数、行数等）
-  - uppercase/lowercase/title：大小写转换
-  - trim：去除首尾空格
-  - reverse：反转文本
-  - extract：内容提取（邮箱、URL、数字等）
-  - generate：文本生成（UUID、密码等）
-  - replace：文本替换
-  - split/join：文本分割和连接
-- text（可选）：要处理的文本内容（generate操作时可选）
-- pattern（可选）：提取或替换模式（email、url、number等）
-- generate_type（可选）：生成类型（uuid、password等）
-- length（可选）：生成长度，默认12，范围4-128
-
-示例
-- 文本统计：分析这段文本："Hello World"
-- 格式转换：将"hello world"转换为大写
-- 内容提取：从这段文本中提取所有邮箱地址
-- 生成密码：生成一个16位的随机密码
-- 生成UUID：生成一个标准UUID
-
-
-6. 短链接生成工具 🔗
-
-- 工具名：shorturl
-- 功能：将长URL转换为短链接，支持多种短链接服务提供商（TinyURL、is.gd、v.gd）
-- 典型场景：URL分享、链接美化、社交媒体发布、二维码生成
-
-参数
-- url（必需）：需要缩短的长URL地址（必须是有效的HTTP/HTTPS URL）
-- service（可选，默认 tinyurl）：短链接服务提供商
-  - tinyurl：TinyURL服务（https://tinyurl.com）
-  - isgd：is.gd服务，支持自定义别名
-  - vgd：v.gd服务，is.gd的替代服务
-- custom_alias（可选）：自定义短链接别名（部分服务支持）
-
-示例
-- 基础使用：请帮我缩短这个链接：https://www.example.com/very/long/url/path
-- 指定服务：使用 is.gd 服务生成短链接：https://github.com/example/repo
-- 自定义别名：用 is.gd 生成短链接，别名设为 mylink
-
-
-
-## 🎯 项目概述
-
-本项目演示了如何构建一个现代化的AI Agent系统，包含以下核心功能：
-
-- 🤖 **智能对话** - 与大语言模型进行自然语言交互
-- 🔧 **工具调用** - Agent可以调用外部工具执行具体任务
-- 🌤️ **信息查询** - 天气查询工具，获取实时信息
-- 🌐 **IP地址查询** - IP信息查询工具，获取地理位置和网络信息
-- 💬 **对话管理** - 完整的对话历史管理和上下文维护
-- ⚙️ **配置管理** - 灵活的配置系统，支持文件和环境变量
-
-## 🏗️ 系统架构
+## 🏗️ 项目结构
 
 ```
 agent-hwan/
-├── cmd/                           # 主程序入口
-│   └── main.go                   # 程序启动文件
-├── internal/                     # 内部模块
-│   ├── agent/                    # Agent核心实现
-│   │   └── agent.go             # 基础Agent类
-│   ├── config/                   # 配置管理
-│   │   └── config.go            # 配置加载和验证
-│   ├── llm/                      # 大语言模型客户端
-│   │   ├── openai.go            # OpenAI/DeepSeek API客户端
-│   │   └── stream_scanner.go    # 流式响应处理
-│   ├── prompt/                   # 系统提示词管理
-│   │   └── prompt.yaml          # 系统提示词配置
-│   └── tools/                    # 工具实现
-│       ├── weather.go           # 天气查询工具（和风天气API）
-│       ├── ip.go                # IP地址查询工具（ipapi.com API）
-│       ├── qrcode.go            # 二维码生成工具
-│       ├── translation.go       # 翻译工具（LibreTranslate API）
-│       ├── textprocessor.go     # 文本处理工具
-│       ├── shorturl.go          # 短链接生成工具
-│       └── registry.go          # 工具注册表
-├── README/                       # 项目文档
-│   ├── 问题答疑.md               # 技术问答文档
-│   ├── 使用指南.md               # 详细使用指南
-│   ├── 项目总结.md               # 项目总结和学习成果
-│   └── AI agent 系统架构.md     # 系统架构详细说明
-├── .gitignore                    # Git忽略文件
-├── go.mod                        # Go模块文件
-├── go.sum                        # Go依赖锁定文件
-└── README.md                     # 项目主说明
+├── cmd/
+│   ├── config/
+│   │   └── config.yaml              # 统一配置文件（YAML）
+│   └── server/
+│       └── main.go                   # 程序入口
+├── internal/
+│   ├── agent/
+│   │   └── agent.go                  # Agent 核心（对话循环、工具调用、并发控制）
+│   ├── config/
+│   │   └── config.go                 # 配置加载与验证
+│   ├── llm/
+│   │   ├── openai.go                 # OpenAI/DeepSeek API 客户端
+│   │   └── stream_scanner.go         # SSE 流式响应解析
+│   ├── logger/
+│   │   └── logger.go                 # 日志系统（INFO/ERROR/WARNING → 文件）
+│   ├── prompt/
+│   │   ├── prompt.go                 # 提示词加载与模板替换
+│   │   ├── prompt.yaml               # 系统提示词配置
+│   │   └── scene.go                  # 场景定义
+│   └── tools/
+│       ├── setup.go                  # 工具统一注册
+│       ├── registry.go               # 工具注册表（生成工具描述供 Prompt 使用）
+│       ├── weather.go                # 天气查询工具
+│       ├── ip.go                     # IP 查询工具
+│       ├── qrcode.go                 # 二维码生成工具
+│       ├── translation.go            # 翻译工具
+│       ├── textprocessor.go          # 文本处理工具
+│       └── shorturl.go               # 短链接生成工具
+├── pkg/
+│   ├── types/
+│   │   └── types.go                  # 公共类型定义（Message, Tool, Config 等）
+│   └── utils/
+│       └── utils.go                  # 工具函数
+├── logs/
+│   └── agent.log                     # 运行日志输出
+├── REFERENCE/                        # 参考文档
+│   ├── AI agent 系统架构.md
+│   └── 关于代码的一些问题.md
+├── go.mod
+├── go.sum
+└── README.md
 ```
-
-### 🔍 核心模块说明
-
-#### 1. 主程序入口 (`cmd/`)
-- `main.go`: 程序启动入口，包含完整的初始化流程和用户交互界面
-
-#### 2. Agent核心 (`internal/agent/`)
-- `agent.go`: 实现Agent的核心逻辑，包括消息处理、工具调用和对话管理
-
-#### 3. 配置管理 (`internal/config/`)
-- `config.go`: 统一的配置管理，支持环境变量、JSON配置文件和YAML提示词配置
-
-#### 4. LLM客户端 (`internal/llm/`)
-- `openai.go`: 兼容OpenAI和DeepSeek API的客户端实现
-- `stream_scanner.go`: 处理流式响应的扫描器
-
-#### 5. 提示词管理 (`internal/prompt/`)
-- `prompt.yaml`: 系统提示词配置文件，支持灵活的提示词管理
-
-#### 6. 工具系统 (`internal/tools/`)
-- `weather.go`: 天气查询工具，集成和风天气API
-- `ip.go`: IP地址查询工具，集成ipapi.com API
-- `qrcode.go`: 二维码生成工具，支持多种输出格式
-- `translation.go`: 翻译工具，集成LibreTranslate API
-- `textprocessor.go`: 文本处理工具，提供文本统计、格式转换、内容提取等功能
-- `shorturl.go`: 短链接生成工具，支持多种短链接服务提供商
-- `registry.go`: 工具注册表，统一管理所有工具
-
-#### 7. 项目文档 (`README/`)
-- `问题答疑.md`: 技术决策和常见问题解答
-- `使用指南.md`: 详细的使用指南和交互示例
-- `项目总结.md`: 项目完成情况和学习成果总结
-- `AI agent 系统架构.md`: 详细的系统架构说明
 
 ## 🚀 快速开始
 
-### 1. 环境准备
+### 1. 环境要求
 
-确保你的系统已安装：
-- Go 1.19 或更高版本
-- Git
+- Go 1.24+
+- 网络连接（访问 LLM API 和工具 API）
 
-### 2. 获取代码
+### 2. 安装依赖
 
 ```bash
-# 克隆项目
 git clone <repository-url>
 cd agent-hwan
-
-# 安装依赖
 go mod tidy
 ```
 
-### 3. 配置API密钥
+### 3. 配置
 
-在运行程序之前，你需要设置API密钥。有两种方式：
+编辑 `cmd/config/config.yaml`：
 
-**方式一：环境变量（推荐）**
-```bash
-# LLM API密钥（必需）
-export LLM_API_KEY="your-openai-api-key-here"
-export LLM_MODEL="gpt-3.5-turbo"  # 可选，默认为gpt-3.5-turbo
+```yaml
+# 日志配置
+log:
+  file_path: "../../logs/agent.log"
 
-# 天气API密钥（可选）
-export QWEATHER_API_KEY="your-qweather-api-key"
+# Prompt 目录配置
+prompt:
+  dir: "../../internal/prompt"
 
-# IP查询API密钥（可选）
-export IPAPI_ACCESS_KEY="your-ipapi-access-key"
+# LLM 配置
+llm:
+  provider: "deepseek"
+  api_key: "your-api-key"
+  model: "deepseek-chat"
+  base_url: "https://api.deepseek.com/v1"
 
-# 翻译工具配置（可选）
-export TRANSLATE_BASE_URL="https://libretranslate.com"  # 翻译服务地址，默认使用公共实例
-export TRANSLATE_API_KEY="your-translate-api-key"       # 翻译API密钥，使用付费服务时需要
+# Agent 配置
+agent:
+  name: "智能助手"
+  description: "一个能够使用工具的智能AI助手"
+  max_tokens: 4096
+  temperature: 0.7
 
-# 短链接工具配置（可选）
-export SHORTURL_BASE_URL="https://tinyurl.com/api-create.php"  # 短链接服务地址，默认使用TinyURL
-export SHORTURL_API_KEY=""                                       # 短链接API密钥（大多数免费服务不需要）
+# 工具配置
+tools:
+  weather:
+    api_key: "your-qweather-api-key"
+    base_url: "https://your-qweather-endpoint"
+  ip:
+    access_key: "your-ipapi-access-key"
+  translate:
+    base_url: "http://127.0.0.1:5000"
+    api_key: ""
 ```
 
-**方式二：配置文件**
-创建 `internal/config/config.json` 文件：
-```json
-{
-  "llm": {
-    "provider": "openai",
-    "api_key": "your-openai-api-key-here",
-    "model": "gpt-3.5-turbo",
-    "base_url": ""
-  },
-  "agent": {
-    "name": "智能助手",
-    "description": "一个能够使用工具的智能AI助手",
-    "max_tokens": 4096,
-    "temperature": 0.7
-  }
-}
-```
-
-### 4. 运行程序
+也支持通过环境变量配置（当配置文件不存在时自动回退）：
 
 ```bash
-# 直接运行
-go run cmd/main.go
-
-# 或者编译后运行
-go build -o ai-agent cmd/main.go
-./ai-agent
+export LLM_API_KEY="your-api-key"
+export LLM_MODEL="deepseek-chat"
+export LLM_BASE_URL="https://api.deepseek.com/v1"
+export WEATHER_API_KEY="your-qweather-key"
+export WEATHER_BASE_URL="https://your-qweather-endpoint"
+# ... 更多环境变量见 internal/config/config.go
 ```
 
-### 5. 程序启动界面
+### 4. 运行
 
-启动程序后，你会看到如下界面：
+```bash
+cd cmd/server
+go run main.go
+```
+
+### 5. 交互示例
 
 ```
 ========== 🤖 AI Agent 助手 ==========
-
-📋 步骤1: 加载配置...
-✅ 配置加载成功！
-
-🔗 步骤2: 创建LLM客户端...
-✅ LLM客户端创建成功！
-
-🔗 步骤3: 注册工具信息...
-✅ 工具信息注册成功！
-
-📋 步骤4: 获取全部的 Prompt 配置...
-✅ Prompt配置获取成功！
-
-🧠 步骤5: 创建AI Agent...
-✅ AI Agent '智能助手' 创建成功！
-
-🔧 步骤6: 添加工具...
-    🌤️  添加天气工具...
-    ✓ 天气工具已添加
-    🌐 添加IP查询工具...
-    ✓ IP查询工具已添加
-  📊 总共添加了 2 个工具
-✅ 所有工具添加完成！
-
-🎯 步骤7: 开始交互...
 
 🎉 AI Agent已准备就绪！
 
 💡 你可以尝试以下问题：
    • 北京的天气怎么样？
-   • 上海今天天气如何？
    • 查询 8.8.8.8 的IP信息
-   • 查询 google.com 的位置
-   • 什么是AI Agent？
+   • 生成一个内容为 https://example.com 的二维码
+   • 请把"今天天气不错"翻译为英文
+   • 统计这段文字的字符数："Hello World"
+   • 帮我缩短这个链接：https://github.com/example/repo
 
 🔧 可用命令：
-   • 'help' - 显示帮助信息
+   • 'help'    - 显示帮助信息
    • 'history' - 查看对话历史
-   • 'clear' - 清空对话历史
-   • 'tools' - 查看可用工具
-   • 'quit' 或 'exit' - 退出程序
+   • 'clear'   - 清空对话历史
+   • 'tools'   - 查看可用工具
+   • 'quit'    - 退出程序
 
-============================================================
-
-👤 用户: 
+👤 用户: 将"我叫李明，很高兴遇见你"翻译为日语
+🤖 助手: ...（流式输出翻译结果）
 ```
 
-## 📚 核心概念详解
+## 🔍 架构设计
 
-### 1. Agent架构
+### 核心流程
 
-AI Agent采用了经典的"感知-思考-行动"循环：
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant M as Main
+    participant A as Agent
+    participant L as LLM
+    participant T as Tool
 
-```go
-type Agent interface {
-    ProcessMessage(ctx context.Context, userMessage string) (string, error)
-    AddTool(tool Tool)
-    GetConversationHistory() []Message
-}
+    U->>M: 输入问题
+    M->>A: ProcessMessageStream(msg)
+    A->>L: ChatStream(history, tools)
+    L-->>A: StreamChunk (工具调用)
+    A->>T: Execute(args)
+    T-->>A: 工具结果
+    A->>L: ChatStream(history + 工具结果)
+    L-->>A: StreamChunk (文本)
+    A-->>M: chan string (流式文本)
+    M-->>U: 实时输出
 ```
 
-**核心流程：**
-1. **接收用户输入** - 获取用户的问题或指令
-2. **分析和理解** - 使用LLM理解用户意图
-3. **决策** - 判断是否需要使用工具
-4. **执行工具** - 如果需要，调用相应的工具
-5. **生成响应** - 基于工具结果生成最终回答
+### 并发安全机制
 
-### 2. 工具系统
+- **`sync.Mutex`**：保护 `history` 切片的并发读写
+- **`chan struct{}` (streamDone)**：确保流式 goroutine 完成 history 写入后，下一次请求才能开始
+- **`waitStreamDone()`**：在 `ProcessMessage`、`ProcessMessageStream`、`GetConversationHistory`、`ClearHistory` 入口处等待上一次流式任务完成
 
-工具是Agent扩展能力的核心机制：
+### 日志系统
 
-```go
-type Tool interface {
-    Name() string
-    Description() string
-    Parameters() map[string]interface{}
-    Execute(ctx context.Context, args map[string]interface{}) (string, error)
-}
-```
-
-**工具特点：**
-- **标准化接口** - 所有工具实现统一接口
-- **参数验证** - 支持JSON Schema参数定义
-- **错误处理** - 完善的错误处理机制
-- **可扩展性** - 易于添加新工具
-
-### 3. LLM集成
-
-支持多种大语言模型：
-
-```go
-type LLMClient interface {
-    Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error)
-    ChatStream(ctx context.Context, messages []Message, tools []Tool) (<-chan string, error)
-}
-```
-
-**特性：**
-- **流式响应** - 支持实时流式输出
-- **工具调用** - 自动处理工具调用协议
-- **上下文管理** - 维护完整的对话历史
-
-## 🔧 内置工具
-
-### 1. 天气查询工具
-
-查询城市天气信息：
-
-```go
-// 使用示例
-用户: "北京今天天气怎么样？"
-助手: "北京今天天气：晴朗，温度25°C，湿度60%"
-```
-
-**功能：**
-- 城市天气查询
-- 支持中文城市名称
-- 集成和风天气API
-
-### 2. IP地址查询工具
-
-查询IP地址的地理位置和网络信息：
-
-```go
-// 使用示例
-用户: "查询 8.8.8.8 的IP信息"
-助手: "IP地址 8.8.8.8 位于美国加利福尼亚州山景城，运营商为Google LLC"
-```
-
-**功能：**
-- IP地址地理定位
-- 域名解析
-- 网络信息查询
-- 支持IPv4和IPv6
-
-## 💡 使用示例
-
-### 基础对话
-
-```
-👤 用户: 你好！
-🤖 助手: 你好！我是智能助手，可以帮你解决各种问题。我能查询天气信息、查询IP地址信息等。有什么可以帮助你的吗？
-```
-
-### 天气查询
-
-```
-👤 用户: 北京今天天气怎么样？
-
-🤖 助手: 我来为你查询北京的天气信息。
-
-根据查询结果，北京今天的天气情况如下：
-- 天气状况：晴朗
-- 温度：22°C
-- 湿度：45%
-- 风速：5km/h
-
-天气不错，适合外出活动！
-```
-
-### IP地址查询
-
-```
-👤 用户: 查询 8.8.8.8 的IP信息
-
-🤖 助手: 我来为你查询这个IP地址的信息。
-
-根据查询结果，IP地址 8.8.8.8 的信息如下：
-- IP地址：8.8.8.8
-- 国家：美国
-- 地区：加利福尼亚州
-- 城市：山景城
-- 运营商：Google LLC
-- 坐标：纬度 37.4056, 经度 -122.0775
-
-这是Google的公共DNS服务器地址。
-```
-
-## 🔧 可用命令详解
-
-### help - 帮助信息
-显示完整的帮助信息，包括可用工具和命令说明。
-
-### history - 对话历史
-查看完整的对话历史记录，包括用户输入和AI响应。
-
-### tools - 工具列表
-显示所有可用工具的详细信息，包括工具名称、描述和参数。
-
-### clear - 清空历史
-清空当前会话的对话历史记录。
-
-### quit/exit - 退出程序
-安全退出程序。
+- 交互式输出（提示、AI 回答）→ **终端 stdout**
+- 运行日志（初始化、工具调用、错误）→ **日志文件** (`logs/agent.log`)
+- 日志级别：`INFO`、`ERROR`、`WARNING`
+- 基于 Go 标准库 `log` 实现，轻量无第三方依赖
 
 ## 🛠️ 开发指南
 
 ### 添加新工具
 
-1. **创建工具结构体**：
-```go
-type MyTool struct {
-    name        string
-    description string
-}
-```
+1. 在 `internal/tools/` 下创建新文件，实现 `types.Tool` 接口：
 
-2. **实现Tool接口**：
 ```go
-func (t *MyTool) Name() string { return t.name }
-func (t *MyTool) Description() string { return t.description }
-func (t *MyTool) Parameters() map[string]interface{} { /* 参数定义 */ }
+type MyTool struct { /* ... */ }
+
+func (t *MyTool) Name() string                { return "mytool" }
+func (t *MyTool) Description() string          { return "我的工具描述" }
+func (t *MyTool) Parameters() map[string]interface{} { /* JSON Schema */ }
 func (t *MyTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-    // 工具逻辑实现
+    // 实现工具逻辑
 }
 ```
 
-3. **注册工具**：
+2. 在 `internal/tools/setup.go` 中注册：
+
 ```go
 myTool := NewMyTool()
-agent.AddTool(myTool)
+aiAgent.AddTool(myTool)
 ```
 
-### 扩展LLM支持
+3. 在 `internal/tools/registry.go` 中添加工具描述信息（供系统提示词使用）。
 
-1. **实现LLMClient接口**：
-```go
-type MyLLMClient struct {
-    // 客户端配置
-}
+### 切换 LLM 提供商
 
-func (c *MyLLMClient) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
-    // 实现聊天逻辑
-}
+修改 `config.yaml` 中的 `llm` 配置即可，支持任何兼容 OpenAI API 格式的服务：
+
+```yaml
+llm:
+  provider: "openai"
+  api_key: "sk-xxx"
+  model: "gpt-4"
+  base_url: "https://api.openai.com/v1"
 ```
 
-2. **集成到Agent**：
-```go
-llmClient := NewMyLLMClient(config)
-agent := agent.NewBasicAgent("助手", "描述", llmClient, systemPrompt)
-```
+## 📋 依赖
 
-## 🔍 技术特点
-
-### 1. 并发安全
-- 使用读写锁保护共享状态
-- 支持多协程并发访问
-- 线程安全的消息处理
-
-### 2. 错误处理
-- 完善的错误处理机制
-- 详细的错误信息
-- 优雅的错误恢复
-
-### 3. 可扩展性
-- 模块化设计
-- 插件式工具系统
-- 易于添加新功能
-
-### 4. 配置管理
-- 支持多种配置源
-- 配置验证
-- 环境变量支持
-
-## 📖 学习路径
-
-### 初学者
-1. 理解基本概念（Agent、Tool、LLM）
-2. 运行示例程序
-3. 尝试添加简单工具
-4. 修改系统提示词
-
-### 进阶开发者
-1. 深入理解架构设计
-2. 实现复杂工具
-3. 集成其他LLM服务
-4. 优化性能和错误处理
-
-### 高级开发者
-1. 扩展Agent能力
-2. 实现分布式部署
-3. 添加监控和日志
-4. 构建生产级系统
-
-## 🚀 扩展建议
-
-### 初级扩展
-1. **添加新工具**
-   - 文件操作工具
-   - 时间日期工具
-   - 单位转换工具
-   - 二维码生成工具
-   - 翻译工具
-
-2. **改进现有功能**
-   - 优化天气查询显示
-   - 增加IP查询的安全信息
-
-### 中级扩展
-1. **数据持久化**
-   - 对话历史存储
-   - 用户偏好记录
-   - 工具使用统计
-
-2. **Web界面**
-   - HTTP API服务
-   - Web聊天界面
-   - 实时消息推送
-
-### 高级扩展
-1. **多Agent协作**
-   - Agent间通信
-   - 任务分发机制
-   - 协作决策
-
-2. **生产级特性**
-   - 监控和日志
-   - 性能优化
-   - 安全加固
-
-## 🤝 贡献指南
-
-欢迎贡献代码！请遵循以下步骤：
-
-1. Fork项目
-2. 创建功能分支
-3. 提交更改
-4. 创建Pull Request
+| 依赖 | 用途 |
+|------|------|
+| `github.com/chzyer/readline` | 终端交互（支持历史记录、行编辑） |
+| `github.com/skip2/go-qrcode` | 二维码生成 |
+| `golang.org/x/text` | 文本处理 |
+| `gopkg.in/yaml.v2` | YAML 配置解析 |
 
 ## ⚠️ 注意事项
 
-1. **API密钥**：确保设置了有效的LLM API密钥
-2. **网络连接**：需要稳定的网络连接访问各种API
-3. **API费用**：使用第三方API可能会产生费用，请注意使用量
-4. **响应时间**：首次响应可能需要几秒钟时间
-
-## 🐛 常见问题
-
-### 问题1：程序启动失败
-```
-❌ 加载配置失败: 未找到LLM API密钥
-```
-**解决方案**：设置环境变量 `LLM_API_KEY` 或修改配置文件
-
-### 问题2：API调用失败
-```
-❌ 处理消息时出错: LLM调用失败: API请求失败，状态码: 401
-```
-**解决方案**：检查API密钥是否正确，是否有足够的API配额
-
-### 问题3：工具调用失败
-```
-❌ 处理消息时出错: 处理工具调用失败: 工具执行失败
-```
-**解决方案**：检查工具参数是否正确，网络连接是否正常
-
-## 🎓 学习建议
-
-1. **从简单开始**：先尝试基本的交互功能
-2. **观察工具调用**：注意AI如何决定使用哪个工具
-3. **实验不同问题**：尝试各种类型的问题，观察AI的响应
-4. **查看历史记录**：使用 `history` 命令了解对话流程
-5. **阅读代码**：深入理解每个模块的实现原理
-
-## 🎉 项目特色
-
-- ✅ **完整的 AI Agent 实现** - 包含感知、决策、执行完整流程
-- 🔧 **多样化工具系统** - 内置天气查询、IP查询工具
-- 💬 **自然对话** - 支持流式响应和上下文管理
-- 📚 **详细文档** - 从入门到高级的完整学习资料
-- 🛠️ **可扩展架构** - 易于添加新工具和功能
-- 🌐 **多API集成** - 支持多种第三方服务集成
+1. **API 密钥安全**：`config.yaml` 中包含敏感信息，请勿提交到公开仓库（已在 `.gitignore` 中排除）
+2. **网络依赖**：天气、翻译、短链接等工具需要网络访问对应的 API 服务
+3. **翻译服务**：默认使用本地 LibreTranslate 实例（`http://127.0.0.1:5000`），需自行部署或替换为公共实例
+4. **日志路径**：默认日志输出到 `logs/agent.log`，路径相对于运行目录
 
 ## 📄 许可证
 
-本项目采用MIT许可证。
-
----
-
-**开始您的 AI Agent 开发之旅吧！🎉**
-
-*如果你觉得这个项目有帮助，请给项目一个⭐️，并分享给其他学习者！*
+MIT License

@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"agent-hwan/internal/logger"
 	"agent-hwan/pkg/utils"
 	"context"
 	"encoding/json"
@@ -103,6 +104,7 @@ func (a *BasicAgent) ProcessMessage(ctx context.Context, userMessage string) (st
 }
 
 // ProcessMessageStream 流式处理用户消息
+// 支持工具调用：当 LLM 返回工具调用时，会自动执行工具并重新请求 LLM 生成最终响应
 // 参数：
 //   - ctx: 上下文
 //   - userMessage: 用户消息
@@ -120,15 +122,6 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 	// 添加用户消息到历史记录
 	a.addUserMessage(userMessage)
 
-	// 获取可用工具列表
-	tools := a.getToolsList()
-
-	// 发送流式请求到LLM
-	rawStream, err := a.llmClient.ChatStream(ctx, a.history, tools)
-	if err != nil {
-		return nil, err
-	}
-
 	// 创建新的 streamDone channel，标记本次流式任务
 	done := make(chan struct{})
 	a.streamDone = done
@@ -138,26 +131,74 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 
 	go func() {
 		defer close(wrappedStream)
-		defer close(a.streamDone) // 标记流式 history 写入完成
+		defer close(done) // 标记流式 history 写入完成
 
-		var fullResponse strings.Builder
+		// 工具调用循环
+		for {
+			// 获取可用工具列表
+			tools := a.getToolsList()
 
-		// 转发流式响应并收集完整内容
-		for chunk := range rawStream {
-			fullResponse.WriteString(chunk)
-			wrappedStream <- chunk
-		}
-
-		// 将完整的AI响应保存到历史记录
-		if fullResponse.Len() > 0 {
-			aiMessage := types.Message{
-				ID:           utils.GenerateMessageID(),
-				Role:         "assistant",
-				Content:      fullResponse.String(),
-				ToolCallList: []types.ToolCall{}, // 流式响应暂不支持工具调用
-				Timestamp:    time.Now(),
+			// 发送流式请求到LLM
+			rawStream, err := a.llmClient.ChatStream(ctx, a.history, tools)
+			if err != nil {
+				logger.Error("流式LLM调用失败: %v", err)
+				wrappedStream <- fmt.Sprintf("错误: %v", err)
+				return
 			}
-			a.history = append(a.history, aiMessage)
+
+			var fullResponse strings.Builder
+			var toolCalls []types.ToolCall
+
+			// 读取流式响应
+			for chunk := range rawStream {
+				// 转发文本内容到输出通道
+				if chunk.Content != "" {
+					fullResponse.WriteString(chunk.Content)
+					wrappedStream <- chunk.Content
+				}
+				// 收集工具调用信息
+				if len(chunk.ToolCalls) > 0 {
+					toolCalls = chunk.ToolCalls
+				}
+			}
+
+			// 如果有工具调用，处理工具调用并继续循环
+			if len(toolCalls) > 0 {
+				// 将 assistant 的工具调用消息添加到历史记录
+				aiMessage := types.Message{
+					ID:           utils.GenerateMessageID(),
+					Role:         "assistant",
+					Content:      fullResponse.String(),
+					ToolCallList: toolCalls,
+					Timestamp:    time.Now(),
+				}
+				a.history = append(a.history, aiMessage)
+
+				// 执行工具调用
+				if e := a.processToolCalls(ctx, toolCalls); e != nil {
+					logger.Error("流式模式处理工具调用失败: %v", e)
+					wrappedStream <- fmt.Sprintf("\n工具调用失败: %v", e)
+					return
+				}
+
+				// 继续循环，让LLM基于工具结果生成最终响应
+				continue
+			}
+
+			// 没有工具调用，保存最终响应到历史记录
+			if fullResponse.Len() > 0 {
+				aiMessage := types.Message{
+					ID:           utils.GenerateMessageID(),
+					Role:         "assistant",
+					Content:      fullResponse.String(),
+					ToolCallList: []types.ToolCall{},
+					Timestamp:    time.Now(),
+				}
+				a.history = append(a.history, aiMessage)
+			}
+
+			// 结束循环
+			return
 		}
 	}()
 
@@ -287,11 +328,14 @@ func (a *BasicAgent) getToolsList() []types.Tool {
 // processToolCalls 处理工具调用
 func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.ToolCall) error {
 	for _, toolCall := range toolCalls {
+		logger.Info("开始调用工具: %s, 参数: %s", toolCall.Function.Name, toolCall.Function.Arguments)
+
 		// 查找对应的工具
 		tool, exists := a.tools[toolCall.Function.Name]
 		if !exists {
 			// 工具不存在，添加错误消息
 			errorMsg := fmt.Sprintf("工具 '%s' 不存在", toolCall.Function.Name)
+			logger.Error("工具调用失败: %s", errorMsg)
 			a.addToolMessage(toolCall.ID, errorMsg)
 			continue
 		}
@@ -301,6 +345,7 @@ func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.Too
 		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
 			// 参数解析失败，添加错误消息
 			errorMsg := fmt.Sprintf("解析工具参数失败: %v", err)
+			logger.Error("工具[%s]参数解析失败: %v", toolCall.Function.Name, err)
 			a.addToolMessage(toolCall.ID, errorMsg)
 			continue
 		}
@@ -310,11 +355,13 @@ func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.Too
 		if err != nil {
 			// 工具执行失败，添加错误消息
 			errorMsg := fmt.Sprintf("工具执行失败: %v", err)
+			logger.Error("工具[%s]执行失败: %v", toolCall.Function.Name, err)
 			a.addToolMessage(toolCall.ID, errorMsg)
 			continue
 		}
 
 		// 成功执行需添加工具执行结果到历史记录
+		logger.Info("工具[%s]执行成功, 结果: %s", toolCall.Function.Name, result)
 		a.addToolMessage(toolCall.ID, result)
 	}
 

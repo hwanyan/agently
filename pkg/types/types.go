@@ -51,6 +51,14 @@ type Tool interface {
 	Execute(ctx context.Context, args map[string]interface{}) (string, error)
 }
 
+// StreamChunk 流式响应的数据块
+// 每个 chunk 可能包含文本内容或工具调用片段
+type StreamChunk struct {
+	Content   string     // 文本内容片段
+	ToolCalls []ToolCall // 工具调用列表（流式结束时汇总）
+	Done      bool       // 是否是最后一个 chunk（汇总工具调用信息）
+}
+
 // LLMClient 接口定义了与大语言模型交互的方法
 // 不同的 LLM 提供商需要实现这个接口
 type LLMClient interface {
@@ -65,8 +73,8 @@ type LLMClient interface {
 	// ctx: 上下文
 	// messages: 对话历史
 	// tools: 可用工具列表
-	// 返回: 响应流通道和可能的错误
-	ChatStream(ctx context.Context, messages []Message, tools []Tool) (<-chan string, error)
+	// 返回: 流式响应通道和可能的错误
+	ChatStream(ctx context.Context, messages []Message, tools []Tool) (<-chan StreamChunk, error)
 }
 
 // Agent 接口定义了AI Agent必须实现的方法

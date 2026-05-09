@@ -75,13 +75,13 @@ func (c *OpenAIClient) Chat(ctx context.Context, messages []types.Message, tools
 // 返回：
 //   - <-chan string: 流式响应的通道
 //   - error: 可能的错误
-func (c *OpenAIClient) ChatStream(ctx context.Context, messages []types.Message, tools []types.Tool) (<-chan string, error) {
+func (c *OpenAIClient) ChatStream(ctx context.Context, messages []types.Message, tools []types.Tool) (<-chan types.StreamChunk, error) {
 	// 构建请求体（启用流式响应）
 	reqBody := c.buildChatRequest(messages, tools)
 	reqBody["stream"] = true
 
 	// 创建响应通道
-	responseChan := make(chan string, 100)
+	responseChan := make(chan types.StreamChunk, 100)
 
 	// 启动goroutine处理流式响应
 	go func() {
@@ -90,7 +90,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, messages []types.Message,
 		// 发送流式请求
 		if err := c.sendStreamRequest(ctx, "/chat/completions", reqBody, responseChan); err != nil {
 			// 发送错误信息到通道
-			responseChan <- fmt.Sprintf("错误: %v", err)
+			responseChan <- types.StreamChunk{Content: fmt.Sprintf("错误: %v", err)}
 		}
 	}()
 
@@ -197,7 +197,7 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, endpoint string, reqBody
 }
 
 // sendStreamRequest 发送流式HTTP请求
-func (c *OpenAIClient) sendStreamRequest(ctx context.Context, endpoint string, reqBody map[string]interface{}, responseChan chan<- string) error {
+func (c *OpenAIClient) sendStreamRequest(ctx context.Context, endpoint string, reqBody map[string]interface{}, responseChan chan<- types.StreamChunk) error {
 	// 序列化请求体
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -232,44 +232,56 @@ func (c *OpenAIClient) sendStreamRequest(ctx context.Context, endpoint string, r
 	return c.processStreamResponse(resp.Body, responseChan)
 }
 
+// streamToolCall 用于在流式响应中累积工具调用片段
+type streamToolCall struct {
+	ID       string
+	Type     string
+	FuncName string
+	FuncArgs strings.Builder
+}
+
 // processStreamResponse 处理流式响应
-func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<- string) error {
+// 支持解析文本内容和工具调用两种响应类型
+func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<- types.StreamChunk) error {
 	scanner := &StreamScanner{}
 	scanner.SetReader(body)
+
+	// 用于累积工具调用片段（OpenAI 流式 API 中工具调用是分片传输的）
+	toolCallMap := make(map[int]*streamToolCall)
 
 	for scanner.Scan() {
 		line := scanner.Text()
 
 		// 跳过空行和注释行
-		// 空行：SSE 协议中可能用于分隔不同事件
-		// 以 `:` 开头的行：SSE 协议中的注释行（例如 : This is a comment），无实际数据，跳过
 		if line == "" || strings.HasPrefix(line, ":") {
 			continue
 		}
 
 		// 处理数据行
-		// 识别以 data: 开头的行（SSE 协议标准格式）
-		// 提取有效数据部分（例如 data: {"choices": [...]} → 截取 {"choices": [...]}）
 		if strings.HasPrefix(line, "data: ") {
 			data := strings.TrimPrefix(line, "data: ")
 
 			// 检查是否是结束标记
-			// 当收到 [DONE] 标记时，表示流式传输结束，退出循环
-			// 这是 OpenAI 流式 API 的约定结束信号
 			if data == "[DONE]" {
 				break
 			}
 
-			// 解析JSON数据
-			// 定义匿名结构体，匹配 OpenAI 流式响应格式：
-			// choices 数组中的第一个元素
-			// delta 对象中的 content 字段（增量内容）
-			// 解析失败时跳过当前数据块（例如网络传输中的不完整 JSON）
+			// 解析JSON数据（包含文本内容和工具调用）
 			var streamResp struct {
 				Choices []struct {
 					Delta struct {
-						Content string `json:"content"`
+						Content   string `json:"content"`
+						ToolCalls []struct {
+							Index    int    `json:"index"`
+							ID       string `json:"id"`
+							Type     string `json:"type"`
+							Function struct {
+								Name      string `json:"name"`
+								Arguments string `json:"arguments"`
+							} `json:"function"`
+						} `json:"tool_calls"`
 					} `json:"delta"`
+					FinishReason *string `json:"finish_reason"`
 				} `json:"choices"`
 			}
 
@@ -277,21 +289,60 @@ func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<-
 				continue // 跳过无法解析的数据
 			}
 
-			// 发送内容到通道
-			if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.Content != "" {
-				responseChan <- streamResp.Choices[0].Delta.Content
+			if len(streamResp.Choices) == 0 {
+				continue
+			}
+
+			choice := streamResp.Choices[0]
+
+			// 处理文本内容
+			if choice.Delta.Content != "" {
+				responseChan <- types.StreamChunk{Content: choice.Delta.Content}
+			}
+
+			// 处理工具调用片段（累积）
+			for _, tc := range choice.Delta.ToolCalls {
+				idx := tc.Index
+				if _, exists := toolCallMap[idx]; !exists {
+					toolCallMap[idx] = &streamToolCall{}
+				}
+				entry := toolCallMap[idx]
+
+				// 首次出现时设置 ID 和类型
+				if tc.ID != "" {
+					entry.ID = tc.ID
+				}
+				if tc.Type != "" {
+					entry.Type = tc.Type
+				}
+				if tc.Function.Name != "" {
+					entry.FuncName = tc.Function.Name
+				}
+				// 累积参数片段
+				if tc.Function.Arguments != "" {
+					entry.FuncArgs.WriteString(tc.Function.Arguments)
+				}
+			}
+
+			// 当 finish_reason 为 "tool_calls" 时，发送汇总的工具调用
+			if choice.FinishReason != nil && *choice.FinishReason == "tool_calls" {
+				var toolCalls []types.ToolCall
+				for i := 0; i < len(toolCallMap); i++ {
+					entry := toolCallMap[i]
+					toolCalls = append(toolCalls, types.ToolCall{
+						ID:   entry.ID,
+						Type: entry.Type,
+						Function: types.FunctionCall{
+							Name:      entry.FuncName,
+							Arguments: entry.FuncArgs.String(),
+						},
+					})
+				}
+				responseChan <- types.StreamChunk{ToolCalls: toolCalls, Done: true}
 			}
 		}
 	}
 
-	// 1. 当以下情况发生时返回 nil：
-	//   - 数据正常读取完毕（遇到 io.EOF）
-	//   - 收到 [DONE] 标记正常结束
-	//   - 没有发生任何读取错误
-	// 2. 当 scanner.Scan() 中发生错误时返回具体错误：
-	//   - 网络连接错误：net.OpError
-	//   - 超时错误：context.DeadlineExceeded
-	//   - 系统I/O错误：syscall.ECONNRESET 等
 	return scanner.Err()
 }
 
