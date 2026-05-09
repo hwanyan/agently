@@ -149,29 +149,6 @@ func loadConfigFromEnv() (*types.Config, error) {
 	return config, nil
 }
 
-// SaveConfig 保存配置到JSON文件
-// 参数：
-//   - config: 要保存的配置
-//   - configPath: 配置文件路径
-//
-// 返回：
-//   - error: 可能的错误
-func SaveConfig(config *types.Config, configPath string) error {
-	// 序列化配置为JSON（利用 json.MarshalIndent 进行了格式美化）
-	// 下面的写法是一种固定格式（也可以将最后的 "  " 替换为 "\t"）
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("序列化配置失败: %w", err)
-	}
-
-	// 写入文件
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("写入配置文件失败: %w", err)
-	}
-
-	return nil
-}
-
 // validateConfig 验证配置的有效性
 func validateConfig(config *types.Config) error {
 	// 验证LLM配置
@@ -270,55 +247,4 @@ func getEnvFloatOrDefault(key string, defaultValue float64) float64 {
 		}
 	}
 	return defaultValue
-}
-
-// UpdateConfig 更新配置中的特定字段
-// 参数：
-//   - config: 要更新的配置
-//   - updates: 更新的字段映射
-//
-// 返回：
-//   - error: 可能的错误
-func UpdateConfig(config *types.Config, updates map[string]interface{}) error {
-	for key, value := range updates {
-		switch key {
-		case "llm.provider":
-			if v, ok := value.(string); ok {
-				config.LLM.Provider = v
-			}
-		case "llm.api_key":
-			if v, ok := value.(string); ok {
-				config.LLM.APIKey = v
-			}
-		case "llm.model":
-			if v, ok := value.(string); ok {
-				config.LLM.Model = v
-			}
-		case "llm.base_url":
-			if v, ok := value.(string); ok {
-				config.LLM.BaseURL = v
-			}
-		case "agent.name":
-			if v, ok := value.(string); ok {
-				config.Agent.Name = v
-			}
-		case "agent.description":
-			if v, ok := value.(string); ok {
-				config.Agent.Description = v
-			}
-		case "agent.max_tokens":
-			if v, ok := value.(int); ok {
-				config.Agent.MaxTokens = v
-			}
-		case "agent.temperature":
-			if v, ok := value.(float64); ok {
-				config.Agent.Temperature = v
-			}
-		default:
-			return fmt.Errorf("未知的配置字段: %s", key)
-		}
-	}
-
-	// 验证更新后的配置
-	return validateConfig(config)
 }

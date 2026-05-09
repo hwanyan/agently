@@ -99,8 +99,8 @@ func generateToolsSection(toolConfig *tools.ToolRegistry) string {
 	// 遍历所有工具信息，添加到工具列表中
 	for index, tool := range toolConfig.GetAvailableTools() {
 		builder.WriteString(fmt.Sprintf("%d. **%s**\n", (index + 1), tool.Name))
-		builder.WriteString(fmt.Sprintf("%s\n", tool.Description))
-		builder.WriteString(fmt.Sprintf("%s\n", tool.Arguments))
+		builder.WriteString(fmt.Sprintf("  %s\n", tool.Description))
+		builder.WriteString(fmt.Sprintf("  %s\n", tool.Arguments))
 	}
 
 	return strings.TrimSpace(builder.String())

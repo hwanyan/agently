@@ -38,7 +38,7 @@ func NewOpenAIClient(apiKey, model, baseURL string) *OpenAIClient {
 		baseURL: baseURL,
 		model:   model,
 		client: &http.Client{
-			Timeout: 60 * time.Second, // 设置60秒超时
+			Timeout: 600 * time.Second, // 设置 600 秒超时
 		},
 	}
 }
@@ -108,9 +108,9 @@ func (c *OpenAIClient) buildChatRequest(messages []types.Message, tools []types.
 		}
 
 		// 如果有工具调用，添加到消息中
-		if len(msg.ToolCalls) > 0 {
-			toolCalls := make([]map[string]interface{}, 0, len(msg.ToolCalls))
-			for _, tc := range msg.ToolCalls {
+		if len(msg.ToolCallList) > 0 {
+			toolCalls := make([]map[string]interface{}, 0, len(msg.ToolCallList))
+			for _, tc := range msg.ToolCallList {
 				toolCalls = append(toolCalls, map[string]interface{}{
 					"id":   tc.ID,
 					"type": tc.Type,
@@ -345,7 +345,7 @@ func (c *OpenAIClient) parseChatResponse(respBody []byte) (*types.Message, error
 				},
 			})
 		}
-		message.ToolCalls = toolCalls
+		message.ToolCallList = toolCalls
 	}
 
 	return message, nil

@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"agent-hwan/pkg/utils"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -87,13 +88,13 @@ func (a *BasicAgent) ProcessMessage(ctx context.Context, userMessage string) (st
 		a.history = append(a.history, *response)
 
 		// 检查是否有工具调用
-		if len(response.ToolCalls) == 0 {
+		if len(response.ToolCallList) == 0 {
 			// 没有工具调用，直接返回响应
 			return response.Content, nil
 		}
 
 		// 处理工具调用
-		if e := a.processToolCalls(ctx, response.ToolCalls); e != nil {
+		if e := a.processToolCalls(ctx, response.ToolCallList); e != nil {
 			return "", fmt.Errorf("处理工具调用失败: %w", e)
 		}
 
@@ -150,11 +151,11 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 		// 将完整的AI响应保存到历史记录
 		if fullResponse.Len() > 0 {
 			aiMessage := types.Message{
-				ID:        generateMessageID(),
-				Role:      "assistant",
-				Content:   fullResponse.String(),
-				ToolCalls: []types.ToolCall{}, // 流式响应暂不支持工具调用
-				Timestamp: time.Now(),
+				ID:           utils.GenerateMessageID(),
+				Role:         "assistant",
+				Content:      fullResponse.String(),
+				ToolCallList: []types.ToolCall{}, // 流式响应暂不支持工具调用
+				Timestamp:    time.Now(),
 			}
 			a.history = append(a.history, aiMessage)
 		}
@@ -243,7 +244,7 @@ func (a *BasicAgent) GetTools() map[string]types.Tool {
 // addSystemMessage 添加系统消息
 func (a *BasicAgent) addSystemMessage(content string) {
 	message := types.Message{
-		ID:        generateMessageID(),
+		ID:        utils.GenerateMessageID(),
 		Role:      "system",
 		Content:   content,
 		Timestamp: time.Now(),
@@ -254,7 +255,7 @@ func (a *BasicAgent) addSystemMessage(content string) {
 // addUserMessage 添加用户消息
 func (a *BasicAgent) addUserMessage(content string) {
 	message := types.Message{
-		ID:        generateMessageID(),
+		ID:        utils.GenerateMessageID(),
 		Role:      "user",
 		Content:   content,
 		Timestamp: time.Now(),
@@ -265,7 +266,7 @@ func (a *BasicAgent) addUserMessage(content string) {
 // addToolMessage 添加工具响应消息
 func (a *BasicAgent) addToolMessage(toolCallID, content string) {
 	message := types.Message{
-		ID:         generateMessageID(),
+		ID:         utils.GenerateMessageID(),
 		Role:       "tool",
 		Content:    content,
 		ToolCallID: toolCallID,
@@ -285,7 +286,6 @@ func (a *BasicAgent) getToolsList() []types.Tool {
 
 // processToolCalls 处理工具调用
 func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.ToolCall) error {
-	// fmt.Println("\n  🎯 进入工具调用函数...")
 	for _, toolCall := range toolCalls {
 		// 查找对应的工具
 		tool, exists := a.tools[toolCall.Function.Name]
@@ -319,9 +319,4 @@ func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.Too
 	}
 
 	return nil
-}
-
-// generateMessageID 生成消息ID
-func generateMessageID() string {
-	return fmt.Sprintf("msg_%d", time.Now().UnixNano())
 }

@@ -9,12 +9,12 @@ import (
 // Message 表示对话中的一条消息
 // 这是Agent系统中消息传递的基本单位
 type Message struct {
-	ID         string     `json:"id"`           // 消息唯一标识
-	Role       string     `json:"role"`         // 消息角色：system, user, assistant, tool
-	Content    string     `json:"content"`      // 消息内容
-	ToolCalls  []ToolCall `json:"tool_calls"`   // 工具调用列表（如果有）
-	ToolCallID string     `json:"tool_call_id"` // 工具调用ID（用于工具响应消息）
-	Timestamp  time.Time  `json:"timestamp"`    // 消息时间戳
+	ID           string     `json:"id"`             // 消息唯一标识
+	Role         string     `json:"role"`           // 消息角色：system, user, assistant, tool
+	Content      string     `json:"content"`        // 消息内容
+	ToolCallList []ToolCall `json:"tool_call_list"` // 工具调用列表（表明当前 Message 是请求调用工具）
+	ToolCallID   string     `json:"tool_call_id"`   // 工具调用ID（当这个值不为空时，Content 存放的是此次调用工具得到的结果）
+	Timestamp    time.Time  `json:"timestamp"`      // 消息时间戳
 }
 
 // ToolCall 表示一个工具调用
@@ -52,7 +52,7 @@ type Tool interface {
 }
 
 // LLMClient 接口定义了与大语言模型交互的方法
-// 不同的LLM提供商需要实现这个接口
+// 不同的 LLM 提供商需要实现这个接口
 type LLMClient interface {
 	// Chat 发送消息并获取响应
 	// ctx: 上下文

@@ -3,8 +3,6 @@ package utils
 
 import (
 	"compress/gzip"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,22 +16,6 @@ import (
 //   - string: 生成的唯一ID
 func GenerateMessageID() string {
 	return fmt.Sprintf("msg_%d", time.Now().UnixNano())
-}
-
-// GenerateID 生成唯一ID
-// 使用当前时间戳和随机数生成唯一标识符
-// 返回：
-//   - string: 生成的唯一ID
-func GenerateID() string {
-	// 使用时间戳作为前缀
-	timestamp := time.Now().UnixNano()
-
-	// 生成4字节随机数
-	randomBytes := make([]byte, 4)
-	rand.Read(randomBytes)
-	randomHex := hex.EncodeToString(randomBytes)
-
-	return fmt.Sprintf("%d_%s", timestamp, randomHex)
 }
 
 // TruncateString 截断字符串
