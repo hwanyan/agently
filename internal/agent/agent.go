@@ -21,7 +21,8 @@ type BasicAgent struct {
 	systemPrompt string                // 系统提示词
 	tools        map[string]types.Tool // 工具映射表
 	history      []types.Message       // 对话历史
-	mutex        sync.RWMutex          // 读写锁，保护并发访问
+	mutex        sync.Mutex            // 互斥锁，保护并发访问
+	streamDone   chan struct{}         // 标记流式响应的 history 写入是否完成
 }
 
 // NewBasicAgent 创建一个新的基础 AI Agent
@@ -41,6 +42,7 @@ func NewBasicAgent(name, description string, llmClient types.LLMClient, systemPr
 		systemPrompt: systemPrompt,
 		tools:        make(map[string]types.Tool),
 		history:      make([]types.Message, 0),
+		streamDone:   nil, // 无流式任务时为 nil
 	}
 
 	// 如果提供了系统提示词，添加到历史记录中
@@ -64,6 +66,9 @@ func (a *BasicAgent) ProcessMessage(ctx context.Context, userMessage string) (st
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
+	// 等待上一次流式响应的 history 写入完成
+	a.waitStreamDone()
+
 	// 添加用户消息到历史记录
 	a.addUserMessage(userMessage)
 
@@ -77,7 +82,6 @@ func (a *BasicAgent) ProcessMessage(ctx context.Context, userMessage string) (st
 		if err != nil {
 			return "", fmt.Errorf("LLM 调用失败: %w", err)
 		}
-		// fmt.Printf("\n  🎯 LLM 调用结果: %+v", response)
 
 		// 添加LLM响应到历史记录
 		a.history = append(a.history, *response)
@@ -89,8 +93,8 @@ func (a *BasicAgent) ProcessMessage(ctx context.Context, userMessage string) (st
 		}
 
 		// 处理工具调用
-		if err := a.processToolCalls(ctx, response.ToolCalls); err != nil {
-			return "", fmt.Errorf("处理工具调用失败: %w", err)
+		if e := a.processToolCalls(ctx, response.ToolCalls); e != nil {
+			return "", fmt.Errorf("处理工具调用失败: %w", e)
 		}
 
 		// 继续循环，让LLM基于工具结果生成最终响应
@@ -109,6 +113,9 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
+	// 等待上一次流式响应的 history 写入完成
+	a.waitStreamDone()
+
 	// 添加用户消息到历史记录
 	a.addUserMessage(userMessage)
 
@@ -121,11 +128,16 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 		return nil, err
 	}
 
-	// 创建包装的流式响应，用于收集完整响应并保存到历史
+	// 创建新的 streamDone channel，标记本次流式任务
+	done := make(chan struct{})
+	a.streamDone = done
+
+	// 创建包装的流式响应，用于收集完整响应并输出
 	wrappedStream := make(chan string, 100)
 
 	go func() {
 		defer close(wrappedStream)
+		defer close(a.streamDone) // 标记流式 history 写入完成
 
 		var fullResponse strings.Builder
 
@@ -138,17 +150,13 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 		// 将完整的AI响应保存到历史记录
 		if fullResponse.Len() > 0 {
 			aiMessage := types.Message{
-				ID:        fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+				ID:        generateMessageID(),
 				Role:      "assistant",
 				Content:   fullResponse.String(),
 				ToolCalls: []types.ToolCall{}, // 流式响应暂不支持工具调用
 				Timestamp: time.Now(),
 			}
-			
-			// 需要重新获取锁来修改历史记录
-			a.mutex.Lock()
 			a.history = append(a.history, aiMessage)
-			a.mutex.Unlock()
 		}
 	}()
 
@@ -165,12 +173,26 @@ func (a *BasicAgent) AddTool(tool types.Tool) {
 	a.tools[tool.Name()] = tool
 }
 
+// waitStreamDone 等待上一次流式响应的 history 写入完成
+// 注意：调用此方法前必须已持有 a.mutex 锁
+func (a *BasicAgent) waitStreamDone() {
+	if a.streamDone == nil {
+		return
+	}
+	// 等待流式 history 写入完成
+	<-a.streamDone
+	a.streamDone = nil
+}
+
 // GetConversationHistory 获取对话历史
 // 返回：
 //   - []types.Message: 对话历史消息列表
 func (a *BasicAgent) GetConversationHistory() []types.Message {
-	a.mutex.RLock()
-	defer a.mutex.RUnlock()
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	// 等待流式响应完成，确保 history 完整
+	a.waitStreamDone()
 
 	// 返回历史记录的副本，避免外部修改
 	history := make([]types.Message, len(a.history))
@@ -183,6 +205,10 @@ func (a *BasicAgent) ClearHistory() {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
+	// 等待上一次流式响应的 history 写入完成
+	a.waitStreamDone()
+
+	// 清空对话
 	a.history = make([]types.Message, 0)
 
 	// 如果有系统提示词，重新添加
@@ -203,8 +229,8 @@ func (a *BasicAgent) GetDescription() string {
 
 // GetTools 获取所有工具
 func (a *BasicAgent) GetTools() map[string]types.Tool {
-	a.mutex.RLock()
-	defer a.mutex.RUnlock()
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
 
 	// 返回工具映射的副本
 	tools := make(map[string]types.Tool)
@@ -298,26 +324,4 @@ func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.Too
 // generateMessageID 生成消息ID
 func generateMessageID() string {
 	return fmt.Sprintf("msg_%d", time.Now().UnixNano())
-}
-
-// SetSystemPrompt 设置系统提示词（注：调用这个函数时会清空 agenyt 的历史记录）
-func (a *BasicAgent) SetSystemPrompt(prompt string) {
-	a.mutex.Lock()
-	defer a.mutex.Unlock()
-
-	a.systemPrompt = prompt
-
-	// 清空历史记录并重新添加系统消息
-	a.history = make([]types.Message, 0)
-	if prompt != "" {
-		a.addSystemMessage(prompt)
-	}
-}
-
-// GetSystemPrompt 获取系统提示词
-func (a *BasicAgent) GetSystemPrompt() string {
-	a.mutex.RLock()
-	defer a.mutex.RUnlock()
-
-	return a.systemPrompt
 }
