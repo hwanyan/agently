@@ -2,12 +2,13 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	"agent-hwan/pkg/types"
+
+	"gopkg.in/yaml.v2"
 )
 
 // PromptConfig 提示词配置结构
@@ -40,7 +41,7 @@ type ToolInfo struct {
 //   - error: 可能的错误
 func LoadConfiguration() (*types.Config, error) {
 	// 首先尝试从配置文件加载
-	configPath := "config.json"
+	configPath := "../config/config.yaml"
 	// 读取配置文件
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  📄 从配置文件加载: %s\n", configPath)
@@ -65,7 +66,7 @@ func LoadConfiguration() (*types.Config, error) {
 	return cfg, nil
 }
 
-// loadConfigFromFile 从JSON文件加载配置
+// loadConfigFromFile 从YAML文件加载配置
 // 参数：
 //   - configPath: 配置文件路径
 //
@@ -82,20 +83,17 @@ func loadConfigFromFile(configPath string) (*types.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
 	}
-	// fmt.Printf("  ✅ 读取配置文件成功：%s\n", string(data))
 
-	// 解析JSON配置
+	// 解析YAML配置
 	var config types.Config
-	if err := json.Unmarshal(data, &config); err != nil {
+	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
-	// fmt.Printf("  ✅ 解析配置文件成功：%v\n", config)
 
 	// 验证配置
 	if err := validateConfig(&config); err != nil {
 		return nil, fmt.Errorf("配置验证失败: %w", err)
 	}
-	// fmt.Printf("  ✅ 验证配置文件成功\n")
 
 	return &config, nil
 }
@@ -110,6 +108,12 @@ func loadConfigFromFile(configPath string) (*types.Config, error) {
 //   - error: 可能的错误
 func loadConfigFromEnv() (*types.Config, error) {
 	config := &types.Config{
+		Log: types.LogConfig{
+			FilePath: getEnvOrDefault("LOG_FILE_PATH", "logs/agent.log"),
+		},
+		Prompt: types.PromptDirConfig{
+			Dir: getEnvOrDefault("PROMPT_DIR", "../../internal/prompt"),
+		},
 		LLM: types.LLMConfig{
 			Provider: getEnvOrDefault("LLM_PROVIDER", "openai"),
 			APIKey:   os.Getenv("LLM_API_KEY"),

@@ -11,6 +11,7 @@ import (
 	"agent-hwan/internal/agent"
 	"agent-hwan/internal/config"
 	"agent-hwan/internal/llm"
+	"agent-hwan/internal/logger"
 	"agent-hwan/internal/prompt"
 	"agent-hwan/internal/tools"
 
@@ -31,52 +32,62 @@ func main() {
 	}
 	fmt.Println("✅ 配置加载成功！")
 
+	// 初始化日志系统
+	if err := logger.Init(cfg.Log.FilePath); err != nil {
+		log.Fatalf("❌ 初始化日志系统失败: %v", err)
+		os.Exit(0)
+	}
+	defer logger.Close()
+	logger.Info("日志系统初始化成功，日志文件: %s", cfg.Log.FilePath)
+
 	// 第二步：创建LLM客户端
-	fmt.Println("\n🔗 步骤2: 创建LLM客户端...")
+	logger.Info("步骤2: 创建LLM客户端...")
 	llmClient := llm.NewOpenAIClient(
 		cfg.LLM.APIKey,
 		cfg.LLM.Model,
 		cfg.LLM.BaseURL,
 	)
-	fmt.Println("✅ LLM客户端创建成功！")
+	logger.Info("LLM客户端创建成功")
 
 	// 第三步：注册工具信息
-	fmt.Println("\n🔗 步骤3: 注册工具信息...")
+	logger.Info("步骤3: 注册工具信息...")
 	toolInfos := tools.NewToolRegistry()
-	fmt.Println("✅ 工具信息注册成功！")
+	logger.Info("工具信息注册成功")
 
 	// 第四步：获取全部的 Prompt 配置
-	fmt.Println("\n📋 步骤4: 获取全部的 Prompt 配置...")
-	prompts, err := prompt.GetPrompts()
+	logger.Info("步骤4: 获取全部的 Prompt 配置...")
+	prompts, err := prompt.GetPrompts(cfg.Prompt.Dir)
 	if err != nil {
+		logger.Error("获取 Prompt 配置失败: %v", err)
 		log.Fatalf("❌ 获取 Prompt 配置失败: %v", err)
 		os.Exit(0)
 	}
-	fmt.Println("✅ Prompt配置获取成功！")
+	logger.Info("Prompt配置获取成功")
 
 	// 第五步：创建AI Agent
-	fmt.Println("\n🧠 步骤5: 创建AI Agent...")
+	logger.Info("步骤5: 创建AI Agent...")
 	systemPrompt, err := prompt.GetSystemPrompt(prompts, toolInfos)
 	if err != nil {
+		logger.Error("获取系统提示失败: %v", err)
 		fmt.Printf("  ❌ 获取系统提示失败: \n%v\n", err)
 		os.Exit(0)
 	}
-	fmt.Println("  ✅ 成功加载系统提示词！")
+	logger.Info("成功加载系统提示词")
 	aiAgent := agent.NewBasicAgent(
 		cfg.Agent.Name,
 		cfg.Agent.Description,
 		llmClient,
 		systemPrompt,
 	)
-	fmt.Printf("✅ AI Agent '%s' 创建成功！\n", cfg.Agent.Name)
+	logger.Info("AI Agent '%s' 创建成功", cfg.Agent.Name)
 
 	// 第六步：添加工具
-	fmt.Println("\n🔧 步骤6: 添加工具...")
+	logger.Info("步骤6: 添加工具...")
 	tools.SetupTools(aiAgent, cfg)
-	fmt.Println("✅ 所有工具添加完成！")
+	logger.Info("所有工具添加完成")
 
 	// 第七步：开始交互
-	fmt.Println("\n🎯 步骤7: 开始交互...")
+	logger.Info("步骤7: 开始交互")
 	fmt.Println("================ END ================")
 	startInteractiveSession(aiAgent)
 }
@@ -115,6 +126,7 @@ func startInteractiveSession(aiAgent *agent.BasicAgent) {
 	// 创建readline实例
 	rl, err := readline.New("👤 用户: ")
 	if err != nil {
+		logger.Error("创建 readline 失败: %v", err)
 		fmt.Printf("❌ 创建 readline 失败: %v\n", err)
 		return
 	}
@@ -145,15 +157,19 @@ func startInteractiveSession(aiAgent *agent.BasicAgent) {
 		fmt.Print("🤖 助手: ")
 		fmt.Print("正在思考...")
 
+		logger.Info("用户输入: %s", userInput)
+
 		// // 方式一：非流式响应接口的处理逻辑
 		// 调用Agent处理消息
 		response, err := aiAgent.ProcessMessage(ctx, userInput)
 		if err != nil {
 			// 清除"正在思考..."并显示错误（注：/r 的作用是将光标移动到当前行的行首，但不会换行，即实现同一行的覆盖式更新）
+			logger.Error("处理消息时出错: %v", err)
 			fmt.Printf("\r🤖 助手: ❌ 处理消息时出错: %v\n", err)
 			continue
 		}
 		// 清除"正在思考..."并显示响应
+		logger.Info("AI响应: %s", response)
 		fmt.Print("\r🤖 助手: ")
 		fmt.Println(response)
 
@@ -289,8 +305,8 @@ func showHistory(aiAgent *agent.BasicAgent) {
 			truncateMessage(msg.Content, 256))
 
 		// 如果有工具调用，显示工具调用信息
-		if len(msg.ToolCalls) > 0 {
-			for _, tc := range msg.ToolCalls {
+		if len(msg.ToolCallList) > 0 {
+			for _, tc := range msg.ToolCallList {
 				fmt.Printf("   🔧 调用工具: %s\n", tc.Function.Name)
 			}
 		}

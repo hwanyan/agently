@@ -1,2 +1,2 @@
 setup-env.sh
-internal/config/config.json
+cmd/config/config.yaml

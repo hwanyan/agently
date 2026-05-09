@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"agent-hwan/internal/logger"
 	"agent-hwan/pkg/utils"
 	"context"
 	"encoding/json"
@@ -235,7 +236,7 @@ func (i *IPTool) performQuery(ctx context.Context, url, target string) (string, 
 	// 读取并解压缩响应体
 	body, err := utils.ReadResponseBody(resp)
 	if err != nil {
-		fmt.Printf("    ❌ 读取响应体失败: %v\n", err)
+		logger.Error("读取响应体失败: %v", err)
 		return "", fmt.Errorf("读取响应体失败: %w", err)
 	}
 

@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"agent-hwan/internal/config"
+	"agent-hwan/internal/logger"
 	"agent-hwan/internal/tools"
 	"fmt"
 	"os"
@@ -13,12 +14,14 @@ import (
 )
 
 // 获取项目下的全部 Prompt
-func GetPrompts() (map[string]string, error) {
+// 参数：
+//   - promptDir: Prompt 文件所在目录路径
+func GetPrompts(promptDir string) (map[string]string, error) {
 	prompts := make(map[string]string)
 
-	// 递归扫描整个项目下的所有 YAML 文件
+	// 递归扫描指定目录下的所有 YAML 文件
 	var files []string
-	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(promptDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -28,24 +31,24 @@ func GetPrompts() (map[string]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("  ⚠️  递归扫描项目文件失败: %w", err)
+		return nil, fmt.Errorf("递归扫描 Prompt 目录失败: %w", err)
 	}
 
 	if len(files) == 0 {
-		return nil, fmt.Errorf("  ⚠️  项目中未找到任何 YAML 文件")
+		return nil, fmt.Errorf("Prompt 目录 [%s] 中未找到任何 YAML 文件", promptDir)
 	}
 
 	// 遍历所有 YAML 文件
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
-			fmt.Printf("  ⚠️  读取文件 %s 失败: %v\n", file, err)
+			logger.Warning("读取文件 %s 失败: %v", file, err)
 			continue
 		}
 
 		var config config.PromptConfig
 		if err := yaml.Unmarshal(data, &config); err != nil {
-			fmt.Printf("  ⚠️  解析文件 %s 失败: %v\n", file, err)
+			logger.Warning("解析文件 %s 失败: %v", file, err)
 			continue
 		}
 
@@ -64,7 +67,7 @@ func GetPrompts() (map[string]string, error) {
 //   - string: 系统提示词内容
 //   - error: 可能的错误
 func GetSystemPrompt(prompts map[string]string, toolRegistry *tools.ToolRegistry) (string, error) {
-	fmt.Println("  💼 获取系统提示词...")
+	logger.Info("获取系统提示词...")
 
 	// 获取系统 Prompt
 	systemPrompt, ok := prompts[SYSTEM_PROMPT]
@@ -88,7 +91,7 @@ func GetSystemPrompt(prompts map[string]string, toolRegistry *tools.ToolRegistry
 		return "", fmt.Errorf("替换系统提示词模板变量失败: %w", err)
 	}
 
-	fmt.Printf("  ✅ 系统提示词替换成功！内容如下：\n%s\n", systemPrompt)
+	logger.Info("系统提示词替换成功")
 	return systemPrompt, nil
 }
 

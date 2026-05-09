@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"agent-hwan/internal/logger"
 	"agent-hwan/pkg/utils"
 )
 
@@ -179,7 +180,7 @@ func (w *WeatherTool) getCityLocation(ctx context.Context, city string) (string,
 	// 创建HTTP请求
 	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 	if err != nil {
-		fmt.Printf("    ❌ 创建HTTP请求失败: %v\n", err)
+		logger.Error("创建HTTP请求失败: %v", err)
 		return "", nil, fmt.Errorf("创建HTTP请求失败: %w", err)
 	}
 
@@ -191,7 +192,7 @@ func (w *WeatherTool) getCityLocation(ctx context.Context, city string) (string,
 	// fmt.Printf("    📡 发送HTTP请求...\n")
 	resp, err := w.client.Do(req)
 	if err != nil {
-		fmt.Printf("    ❌ 发送HTTP请求失败: %v\n", err)
+		logger.Error("发送HTTP请求失败: %v", err)
 		return "", nil, fmt.Errorf("发送HTTP请求失败: %w", err)
 	}
 	defer resp.Body.Close()
@@ -199,14 +200,14 @@ func (w *WeatherTool) getCityLocation(ctx context.Context, city string) (string,
 	// 检查响应状态
 	// fmt.Printf("    📡 响应状态码: %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("    ❌ API请求失败，状态码: %d\n", resp.StatusCode)
+		logger.Error("API请求失败，状态码: %d", resp.StatusCode)
 		return "", nil, fmt.Errorf("API请求失败，状态码: %d", resp.StatusCode)
 	}
 
 	// 读取并解压缩响应体
 	body, err := utils.ReadResponseBody(resp)
 	if err != nil {
-		fmt.Printf("    ❌ 读取响应体失败: %v\n", err)
+		logger.Error("读取响应体失败: %v", err)
 		return "", nil, fmt.Errorf("读取响应体失败: %w", err)
 	}
 	// fmt.Printf("    📡 响应体内容: %s\n", string(body))
@@ -214,21 +215,21 @@ func (w *WeatherTool) getCityLocation(ctx context.Context, city string) (string,
 	// 解析响应
 	var locationResp QWeatherLocationResponse
 	if err := json.Unmarshal(body, &locationResp); err != nil {
-		fmt.Printf("    ❌ 解析地理位置响应失败: %v\n", err)
+		logger.Error("解析地理位置响应失败: %v", err)
 		return "", nil, fmt.Errorf("解析地理位置响应失败: %w", err)
 	}
 
 	// 检查API返回码
 	// fmt.Printf("    📡 API返回码: %s\n", locationResp.Code)
 	if locationResp.Code != "200" {
-		fmt.Printf("    ❌ 和风天气API返回错误，代码: %s\n", locationResp.Code)
+		logger.Error("和风天气API返回错误，代码: %s", locationResp.Code)
 		return "", nil, fmt.Errorf("和风天气API返回错误，代码: %s", locationResp.Code)
 	}
 
 	// 检查是否有结果
 	// fmt.Printf("    📡 找到的位置数量: %d\n", len(locationResp.Location))
 	if len(locationResp.Location) == 0 {
-		fmt.Printf("    ❌ 未找到城市: %s\n", city)
+		logger.Warning("未找到城市: %s", city)
 		return "", nil, fmt.Errorf("未找到城市: %s", city)
 	}
 
@@ -259,7 +260,7 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 	// 创建HTTP请求
 	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 	if err != nil {
-		fmt.Printf("    ❌ 创建HTTP请求失败: %v\n", err)
+		logger.Error("创建HTTP请求失败: %v", err)
 		return nil, fmt.Errorf("创建HTTP请求失败: %w", err)
 	}
 
@@ -271,7 +272,7 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 	// fmt.Printf("    📡 发送HTTP请求...\n")
 	resp, err := w.client.Do(req)
 	if err != nil {
-		fmt.Printf("    ❌ 发送HTTP请求失败: %v\n", err)
+		logger.Error("发送HTTP请求失败: %v", err)
 		return nil, fmt.Errorf("发送HTTP请求失败: %w", err)
 	}
 	defer resp.Body.Close()
@@ -279,14 +280,14 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 	// 检查响应状态
 	// fmt.Printf("    📡 响应状态码: %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("    ❌ API请求失败，状态码: %d\n", resp.StatusCode)
+		logger.Error("API请求失败，状态码: %d", resp.StatusCode)
 		return nil, fmt.Errorf("API请求失败，状态码: %d", resp.StatusCode)
 	}
 
 	// 读取并解压缩响应体
 	body, err := utils.ReadResponseBody(resp)
 	if err != nil {
-		fmt.Printf("    ❌ 读取响应体失败: %v\n", err)
+		logger.Error("读取响应体失败: %v", err)
 		return nil, fmt.Errorf("读取响应体失败: %w", err)
 	}
 	// fmt.Printf("    📡 响应体内容: %s\n", string(body))
@@ -294,14 +295,14 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 	// 解析响应
 	var weatherResp QWeatherCurrentResponse
 	if err := json.Unmarshal(body, &weatherResp); err != nil {
-		fmt.Printf("    ❌ 解析天气响应失败: %v\n", err)
+		logger.Error("解析天气响应失败: %v", err)
 		return nil, fmt.Errorf("解析天气响应失败: %w", err)
 	}
 
 	// 检查API返回码
 	// fmt.Printf("    📡 天气API返回码: %s\n", weatherResp.Code)
 	if weatherResp.Code != "200" {
-		fmt.Printf("    ❌ 和风天气API返回错误，代码: %s\n", weatherResp.Code)
+		logger.Error("和风天气API返回错误，代码: %s", weatherResp.Code)
 		return nil, fmt.Errorf("和风天气API返回错误，代码: %s", weatherResp.Code)
 	}
 

@@ -95,56 +95,68 @@ type Agent interface {
 
 // LLMConfig LLM配置
 type LLMConfig struct {
-	Provider string `json:"provider"` // LLM提供商（如openai、deepseek、claude等）
-	APIKey   string `json:"api_key"`  // API密钥
-	Model    string `json:"model"`    // 模型名称
-	BaseURL  string `json:"base_url"` // API基础URL（可选）
+	Provider string `yaml:"provider"` // LLM提供商（如openai、deepseek、claude等）
+	APIKey   string `yaml:"api_key"`  // API密钥
+	Model    string `yaml:"model"`    // 模型名称
+	BaseURL  string `yaml:"base_url"` // API基础URL（可选）
 }
 
 // AgentConfig Agent配置
 type AgentConfig struct {
-	Name        string  `json:"name"`        // Agent名称
-	Description string  `json:"description"` // Agent描述
-	MaxTokens   int     `json:"max_tokens"`  // 最大token数
-	Temperature float64 `json:"temperature"` // 温度参数
+	Name        string  `yaml:"name"`        // Agent名称
+	Description string  `yaml:"description"` // Agent描述
+	MaxTokens   int     `yaml:"max_tokens"`  // 最大token数
+	Temperature float64 `yaml:"temperature"` // 温度参数
 }
 
 // WeatherConfig 天气工具配置
 type WeatherConfig struct {
-	APIKey  string `json:"api_key"`  // 和风天气API密钥
-	BaseURL string `json:"base_url"` // 和风天气API基础URL
+	APIKey  string `yaml:"api_key"`  // 和风天气API密钥
+	BaseURL string `yaml:"base_url"` // 和风天气API基础URL
 }
 
 // IPToolConfig IP工具配置
 type IPToolConfig struct {
-	AccessKey string `json:"access_key"` // IP地址查询 access key
+	AccessKey string `yaml:"access_key"` // IP地址查询 access key
 }
 
 // TranslateConfig 翻译工具配置
 type TranslateConfig struct {
-	APIKey  string `json:"api_key"`  // 翻译API密钥
-	BaseURL string `json:"base_url"` // 翻译API基础URL
+	APIKey  string `yaml:"api_key"`  // 翻译API密钥
+	BaseURL string `yaml:"base_url"` // 翻译API基础URL
 }
 
 // ShortURLConfig 短链接工具配置
 type ShortURLConfig struct {
-	APIKey  string `json:"api_key"`  // 短链接API密钥（可选）
-	BaseURL string `json:"base_url"` // 短链接API基础URL
+	APIKey  string `yaml:"api_key"`  // 短链接API密钥（可选）
+	BaseURL string `yaml:"base_url"` // 短链接API基础URL
 }
 
 // ToolsConfig 工具配置
 type ToolsConfig struct {
-	Weather   WeatherConfig   `json:"weather"`   // 天气工具配置
-	IP        IPToolConfig    `json:"ip"`        // IP工具配置
-	Translate TranslateConfig `json:"translate"` // 翻译工具配置
-	ShortURL  ShortURLConfig  `json:"short_url"` // 短链接工具配置
+	Weather   WeatherConfig   `yaml:"weather"`   // 天气工具配置
+	IP        IPToolConfig    `yaml:"ip"`        // IP工具配置
+	Translate TranslateConfig `yaml:"translate"` // 翻译工具配置
+	ShortURL  ShortURLConfig  `yaml:"short_url"` // 短链接工具配置
+}
+
+// LogConfig 日志配置
+type LogConfig struct {
+	FilePath string `yaml:"file_path"` // 日志文件路径
+}
+
+// PromptDirConfig Prompt目录配置
+type PromptDirConfig struct {
+	Dir string `yaml:"dir"` // Prompt文件所在目录
 }
 
 // Config 应用程序总配置
 type Config struct {
-	LLM   LLMConfig   `json:"llm"`   // LLM配置
-	Agent AgentConfig `json:"agent"` // Agent配置
-	Tools ToolsConfig `json:"tools"` // 工具配置
+	Log    LogConfig       `yaml:"log"`    // 日志配置
+	Prompt PromptDirConfig `yaml:"prompt"` // Prompt目录配置
+	LLM    LLMConfig       `yaml:"llm"`    // LLM配置
+	Agent  AgentConfig     `yaml:"agent"`  // Agent配置
+	Tools  ToolsConfig     `yaml:"tools"`  // 工具配置
 }
 
 // ToolParameter 工具参数定义
