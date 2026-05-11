@@ -232,14 +232,6 @@ func (c *OpenAIClient) sendStreamRequest(ctx context.Context, endpoint string, r
 	return c.processStreamResponse(resp.Body, responseChan)
 }
 
-// streamToolCall 用于在流式响应中累积工具调用片段
-type streamToolCall struct {
-	ID       string
-	Type     string
-	FuncName string
-	FuncArgs strings.Builder
-}
-
 // processStreamResponse 处理流式响应
 // 支持解析文本内容和工具调用两种响应类型
 func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<- types.StreamChunk) error {
@@ -247,8 +239,11 @@ func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<-
 	scanner.SetReader(body)
 
 	// 用于累积工具调用片段（OpenAI 流式 API 中工具调用是分片传输的）
-	toolCallMap := make(map[int]*streamToolCall)
+	toolCallMap := make(map[int]*StreamToolCallAccumulator)
 
+	// 阻塞等待，有数据就读，直到遇到 [DONE] 或 EOF 为止
+	// 前面的 sendStreamRequest 和 processStreamResponse 都只执行一次
+	// 只要设置了 reqBody["stream"] = true，LLM 服务端就会返回流式响应
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -266,36 +261,19 @@ func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<-
 				break
 			}
 
-			// 解析JSON数据（包含文本内容和工具调用）
-			var streamResp struct {
-				Choices []struct {
-					Delta struct {
-						Content   string `json:"content"`
-						ToolCalls []struct {
-							Index    int    `json:"index"`
-							ID       string `json:"id"`
-							Type     string `json:"type"`
-							Function struct {
-								Name      string `json:"name"`
-								Arguments string `json:"arguments"`
-							} `json:"function"`
-						} `json:"tool_calls"`
-					} `json:"delta"`
-					FinishReason *string `json:"finish_reason"`
-				} `json:"choices"`
-			}
-
+			// 使用 ChatCompletionStreamResponse 解析 JSON 数据
+			// 该结构体定义在 schema.go 中，对应 OpenAI 流式 API 的 SSE chunk 格式
+			var streamResp ChatCompletionStreamResponse
+			// 跳过无法解析的数据
 			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-				continue // 跳过无法解析的数据
+				continue
 			}
-
 			if len(streamResp.Choices) == 0 {
 				continue
 			}
-
 			choice := streamResp.Choices[0]
 
-			// 处理文本内容
+			// 将内容转发到输出通道
 			if choice.Delta.Content != "" {
 				responseChan <- types.StreamChunk{Content: choice.Delta.Content}
 			}
@@ -303,12 +281,18 @@ func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<-
 			// 处理工具调用片段（累积）
 			for _, tc := range choice.Delta.ToolCalls {
 				idx := tc.Index
+				// processStreamResponse 收到的工具调用片段可能包含多个工具调用
+				// 因此要用 map 来存储多个工具调用片段
 				if _, exists := toolCallMap[idx]; !exists {
-					toolCallMap[idx] = &streamToolCall{}
+					toolCallMap[idx] = &StreamToolCallAccumulator{}
 				}
 				entry := toolCallMap[idx]
 
-				// 首次出现时设置 ID 和类型
+				// 对于一个工具调用，只有首次出现时才会传递 ID 和类型，如下：
+				// chunk 1: {index: 0, id: "call_xxx", type: "function", function: {name: "get_weather", arguments: ""}}
+				// chunk 2: {index: 0, function: {arguments: "{\"ci"}}
+				// chunk 3: {index: 0, function: {arguments: "ty\":"}}
+				// chunk 4: {index: 0, function: {arguments: "\"北京\"}"}}
 				if tc.ID != "" {
 					entry.ID = tc.ID
 				}
@@ -318,18 +302,21 @@ func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<-
 				if tc.Function.Name != "" {
 					entry.FuncName = tc.Function.Name
 				}
-				// 累积参数片段
+				// 累积参数片段（注：Arguments 的拼接不会出错）
+				// 因为：SSE 是基于 HTTP/1.1 的单连接顺序传输，它在单个 TCP 连接上进行顺序字节流传输。
+				// 这意味着服务端按什么顺序写入 chunk，客户端就按什么顺序读到。这是 TCP 协议的基本保证，
+				// 不受网络延迟影响（网络延迟只会影响"多久收到下一个 chunk"，不会影响"收到的顺序"）。
 				if tc.Function.Arguments != "" {
 					entry.FuncArgs.WriteString(tc.Function.Arguments)
 				}
 			}
 
-			// 当 finish_reason 为 "tool_calls" 时，发送汇总的工具调用
+			// 当 finish_reason 为 "tool_calls" 时，表示工具调用的全部信息都已发送，这是需要汇总这些工具调用信息
 			if choice.FinishReason != nil && *choice.FinishReason == "tool_calls" {
-				var toolCalls []types.ToolCall
+				var toolCallList []types.ToolCall
 				for i := 0; i < len(toolCallMap); i++ {
 					entry := toolCallMap[i]
-					toolCalls = append(toolCalls, types.ToolCall{
+					toolCallList = append(toolCallList, types.ToolCall{
 						ID:   entry.ID,
 						Type: entry.Type,
 						Function: types.FunctionCall{
@@ -338,7 +325,7 @@ func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<-
 						},
 					})
 				}
-				responseChan <- types.StreamChunk{ToolCalls: toolCalls, Done: true}
+				responseChan <- types.StreamChunk{ToolCallList: toolCallList, Done: true}
 			}
 		}
 	}
@@ -348,23 +335,9 @@ func (c *OpenAIClient) processStreamResponse(body io.Reader, responseChan chan<-
 
 // parseChatResponse 解析聊天响应
 func (c *OpenAIClient) parseChatResponse(respBody []byte) (*types.Message, error) {
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Role      string `json:"role"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
-					Function struct {
-						Name        string `json:"name"`
-						Description string `json:"description"`
-						Arguments   string `json:"arguments"`
-					} `json:"function"`
-				} `json:"tool_calls"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
+	// 使用 ChatCompletionResponse 解析完整的 JSON 响应
+	// 该结构体定义在 schema.go 中，对应 OpenAI Chat Completions API 的标准响应格式
+	var apiResp ChatCompletionResponse
 
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)

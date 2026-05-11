@@ -116,7 +116,7 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
-	// 等待上一次流式响应的 history 写入完成
+	// 等待上一次流式响应的 history 写入完成（避免竞态风险）
 	a.waitStreamDone()
 
 	// 添加用户消息到历史记录
@@ -147,7 +147,7 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 			}
 
 			var fullResponse strings.Builder
-			var toolCalls []types.ToolCall
+			var toolCallList []types.ToolCall
 
 			// 读取流式响应
 			for chunk := range rawStream {
@@ -157,25 +157,25 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 					wrappedStream <- chunk.Content
 				}
 				// 收集工具调用信息
-				if len(chunk.ToolCalls) > 0 {
-					toolCalls = chunk.ToolCalls
+				if len(chunk.ToolCallList) > 0 {
+					toolCallList = chunk.ToolCallList
 				}
 			}
 
 			// 如果有工具调用，处理工具调用并继续循环
-			if len(toolCalls) > 0 {
+			if len(toolCallList) > 0 {
 				// 将 assistant 的工具调用消息添加到历史记录
 				aiMessage := types.Message{
 					ID:           utils.GenerateMessageID(),
 					Role:         "assistant",
 					Content:      fullResponse.String(),
-					ToolCallList: toolCalls,
+					ToolCallList: toolCallList,
 					Timestamp:    time.Now(),
 				}
 				a.history = append(a.history, aiMessage)
 
 				// 执行工具调用
-				if e := a.processToolCalls(ctx, toolCalls); e != nil {
+				if e := a.processToolCalls(ctx, toolCallList); e != nil {
 					logger.Error("流式模式处理工具调用失败: %v", e)
 					wrappedStream <- fmt.Sprintf("\n工具调用失败: %v", e)
 					return

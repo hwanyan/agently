@@ -17,7 +17,7 @@ type Message struct {
 	Timestamp    time.Time  `json:"timestamp"`      // 消息时间戳
 }
 
-// ToolCall 表示一个工具调用
+// ToolCall 表示一个工具调用，包含了这次调用工具的详细信息
 // 当LLM决定使用工具时，会生成这样的结构
 type ToolCall struct {
 	ID       string       `json:"id"`       // 工具调用的唯一标识
@@ -54,9 +54,9 @@ type Tool interface {
 // StreamChunk 流式响应的数据块
 // 每个 chunk 可能包含文本内容或工具调用片段
 type StreamChunk struct {
-	Content   string     // 文本内容片段
-	ToolCalls []ToolCall // 工具调用列表（流式结束时汇总）
-	Done      bool       // 是否是最后一个 chunk（汇总工具调用信息）
+	Content      string     // 文本内容片段
+	ToolCallList []ToolCall // 工具调用列表（流式结束时汇总）
+	Done         bool       // 是否是最后一个 chunk（汇总工具调用信息）
 }
 
 // LLMClient 接口定义了与大语言模型交互的方法
