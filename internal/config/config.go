@@ -120,12 +120,6 @@ func loadConfigFromEnv() (*types.Config, error) {
 			Model:    os.Getenv("LLM_MODEL"),
 			BaseURL:  os.Getenv("LLM_BASE_URL"),
 		},
-		Agent: types.AgentConfig{
-			Name:        getEnvOrDefault("AGENT_NAME", "智能助手"),
-			Description: getEnvOrDefault("AGENT_DESCRIPTION", "一个能够使用工具的智能AI助手"),
-			MaxTokens:   getEnvIntOrDefault("AGENT_MAX_TOKENS", 4096),
-			Temperature: getEnvFloatOrDefault("AGENT_TEMPERATURE", 0.7),
-		},
 		Tools: types.ToolsConfig{
 			Weather: types.WeatherConfig{
 				APIKey:  os.Getenv("WEATHER_API_KEY"),
@@ -168,17 +162,28 @@ func validateConfig(config *types.Config) error {
 		return fmt.Errorf("LLM模型不能为空")
 	}
 
-	// 验证Agent配置
-	if config.Agent.Name == "" {
-		return fmt.Errorf("Agent名称不能为空")
+	// 验证Agents配置
+	if len(config.Agents) == 0 {
+		return fmt.Errorf("Agents配置列表不能为空，至少需要配置一个Agent")
 	}
 
-	if config.Agent.MaxTokens <= 0 {
-		return fmt.Errorf("最大token数必须大于0")
-	}
-
-	if config.Agent.Temperature < 0 || config.Agent.Temperature > 2 {
-		return fmt.Errorf("温度参数必须在0-2之间")
+	// 验证每个Agent配置项
+	for _, ag := range config.Agents {
+		if ag.ID == "" {
+			return fmt.Errorf("Agent配置中存在id为空的项")
+		}
+		if ag.Name == "" {
+			return fmt.Errorf("Agent [%s] 的name不能为空", ag.ID)
+		}
+		if ag.PromptScene == "" {
+			return fmt.Errorf("Agent [%s] 的prompt_scene不能为空", ag.ID)
+		}
+		if ag.Role == "" {
+			return fmt.Errorf("Agent [%s] 的role不能为空，必须为 system 或 business", ag.ID)
+		}
+		if ag.Role != types.AgentRoleSystem && ag.Role != types.AgentRoleBusiness {
+			return fmt.Errorf("Agent [%s] 的role值 [%s] 无效，必须为 system 或 business", ag.ID, ag.Role)
+		}
 	}
 
 	// 验证天气工具配置
@@ -201,54 +206,6 @@ func validateConfig(config *types.Config) error {
 func getEnvOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
-	}
-	return defaultValue
-}
-
-// getEnvIntOrDefault 获取整数类型的环境变量或返回默认值
-func getEnvIntOrDefault(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		// 简单的字符串到整数转换
-		// 在实际项目中，应该使用strconv.Atoi并处理错误
-		switch value {
-		case "1024":
-			return 1024
-		case "2048":
-			return 2048
-		case "4096":
-			return 4096
-		case "8192":
-			return 8192
-		default:
-			return defaultValue
-		}
-	}
-	return defaultValue
-}
-
-// getEnvFloatOrDefault 获取浮点数类型的环境变量或返回默认值
-func getEnvFloatOrDefault(key string, defaultValue float64) float64 {
-	if value := os.Getenv(key); value != "" {
-		// 简单的字符串到整数转换
-		// 在实际项目中，应该使用strconv.ParseFloat并处理错误
-		switch value {
-		case "0.0":
-			return 0.0
-		case "0.1":
-			return 0.1
-		case "0.3":
-			return 0.3
-		case "0.5":
-			return 0.5
-		case "0.7":
-			return 0.7
-		case "0.9":
-			return 0.9
-		case "1.0":
-			return 1.0
-		default:
-			return defaultValue
-		}
 	}
 	return defaultValue
 }

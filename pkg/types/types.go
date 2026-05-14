@@ -109,12 +109,38 @@ type LLMConfig struct {
 	BaseURL  string `yaml:"base_url"` // API基础URL（可选）
 }
 
-// AgentConfig Agent配置
-type AgentConfig struct {
-	Name        string  `yaml:"name"`        // Agent名称
-	Description string  `yaml:"description"` // Agent描述
-	MaxTokens   int     `yaml:"max_tokens"`  // 最大token数
-	Temperature float64 `yaml:"temperature"` // 温度参数
+// AgentRole Agent角色类型
+// 用于区分系统级Agent和业务级Agent，不同角色在启动时有不同的容错策略
+type AgentRole string
+
+const (
+	// AgentRoleSystem 系统Agent（如意图路由），启动时必须成功注册，否则服务不启动
+	AgentRoleSystem AgentRole = "system"
+	// AgentRoleBusiness 业务Agent（如通用助手、黄金分析），启动时允许注册失败
+	AgentRoleBusiness AgentRole = "business"
+)
+
+// AgentItemConfig 多Agent配置中的单个Agent配置项
+type AgentItemConfig struct {
+	ID          string    `yaml:"id"`           // Agent唯一标识（如 general, gold_analysis）
+	Name        string    `yaml:"name"`         // Agent显示名称
+	Description string    `yaml:"description"`  // Agent描述
+	PromptScene string    `yaml:"prompt_scene"` // 对应的 Prompt 场景名
+	ToolGroup   string    `yaml:"tool_group"`   // 工具组标识（如 general, mcp_gold, none）
+	Role        AgentRole `yaml:"role"`         // Agent角色：system（系统级）或 business（业务级）
+}
+
+// MCPServerConfig MCP服务器配置
+type MCPServerConfig struct {
+	Name    string `yaml:"name"`     // MCP服务名称
+	BaseURL string `yaml:"base_url"` // MCP服务地址
+	APIKey  string `yaml:"api_key"`  // MCP服务API密钥（可选）
+	Timeout int    `yaml:"timeout"`  // 请求超时时间（秒）
+}
+
+// MCPConfig MCP工具配置
+type MCPConfig struct {
+	Servers []MCPServerConfig `yaml:"servers"` // MCP服务器列表
 }
 
 // WeatherConfig 天气工具配置
@@ -160,11 +186,12 @@ type PromptDirConfig struct {
 
 // Config 应用程序总配置
 type Config struct {
-	Log    LogConfig       `yaml:"log"`    // 日志配置
-	Prompt PromptDirConfig `yaml:"prompt"` // Prompt目录配置
-	LLM    LLMConfig       `yaml:"llm"`    // LLM配置
-	Agent  AgentConfig     `yaml:"agent"`  // Agent配置
-	Tools  ToolsConfig     `yaml:"tools"`  // 工具配置
+	Log    LogConfig         `yaml:"log"`    // 日志配置
+	Prompt PromptDirConfig   `yaml:"prompt"` // Prompt目录配置
+	LLM    LLMConfig         `yaml:"llm"`    // LLM配置
+	Agents []AgentItemConfig `yaml:"agents"` // 多Agent配置列表
+	Tools  ToolsConfig       `yaml:"tools"`  // 工具配置
+	MCP    MCPConfig         `yaml:"mcp"`    // MCP工具配置
 }
 
 // ToolParameter 工具参数定义

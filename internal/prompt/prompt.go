@@ -16,6 +16,7 @@ import (
 // 获取项目下的全部 Prompt
 // 参数：
 //   - promptDir: Prompt 文件所在目录路径
+//   - 返回结构：map[场景名称]系统提示词内容，如 map["intention_router_prompt"] = "意图路由Agent"
 func GetPrompts(promptDir string) (map[string]string, error) {
 	prompts := make(map[string]string)
 
@@ -58,41 +59,52 @@ func GetPrompts(promptDir string) (map[string]string, error) {
 	return prompts, nil
 }
 
-// GetSystemPrompt 根据场景获取系统提示词
+// GetSystemPrompt 获取通用助手的系统提示词（保留兼容性）
 // 参数：
-//   - scene: 场景名称，如 "system_prompt"
-//   - toolConfig: 工具配置，用于动态注入工具信息
+//   - prompts: 所有 Prompt 配置
+//   - toolRegistry: 工具注册表，用于动态注入工具信息
 //
 // 返回：
 //   - string: 系统提示词内容
 //   - error: 可能的错误
 func GetSystemPrompt(prompts map[string]string, toolRegistry *tools.ToolRegistry) (string, error) {
-	logger.Info("获取系统提示词...")
+	vars := map[string]any{
+		"TOOLS_SECTION": generateToolsSection(toolRegistry),
+	}
+	return GetPromptByScene(prompts, GENERAL_PROMPT, vars)
+}
 
-	// 获取系统 Prompt
-	systemPrompt, ok := prompts[SYSTEM_PROMPT]
+// GetPromptByScene 根据场景名获取系统提示词
+// 参数：
+//   - prompts: 所有 Prompt 配置
+//   - scene: 场景名称（如 "general_prompt"、"gold_analysis_prompt"）
+//   - vars: 模板变量映射（如 {"TOOLS_SECTION": "...", "AGENTS_SECTION": "..."}）
+//
+// 返回：
+//   - string: 替换模板变量后的系统提示词
+//   - error: 可能的错误
+func GetPromptByScene(prompts map[string]string, scene string, vars map[string]any) (string, error) {
+	logger.Info("获取场景 [%s] 的系统提示词...", scene)
+
+	// 获取对应场景的 Prompt
+	promptContent, ok := prompts[scene]
 	if !ok {
-		return "", fmt.Errorf("❌ 找不到系统提示词配置")
+		return "", fmt.Errorf("❌ 找不到场景 [%s] 的提示词配置", scene)
 	}
 
-	// 生成工具信息
-	toolsSection := generateToolsSection(toolRegistry)
-
-	// 替换工具占位符
-	// 方式一：直接替换
-	// systemPrompt := strings.ReplaceAll(systemPrompt, "{{TOOLS_SECTION}}", toolsSection)
-	// 方式二：使用正则表达式替换
-	// 准备模板变量
-	inputs := map[string]any{
-		"TOOLS_SECTION": toolsSection,
-	}
-	systemPrompt, err := replaceTemplateVars(systemPrompt, inputs)
+	// 替换模板变量
+	result, err := replaceTemplateVars(promptContent, vars)
 	if err != nil {
-		return "", fmt.Errorf("替换系统提示词模板变量失败: %w", err)
+		return "", fmt.Errorf("替换场景 [%s] 提示词模板变量失败: %w", scene, err)
 	}
 
-	logger.Info("系统提示词替换成功")
-	return systemPrompt, nil
+	logger.Info("场景 [%s] 提示词替换成功", scene)
+	return result, nil
+}
+
+// GenerateToolsSection 生成工具信息部分（导出，供外部调用）
+func GenerateToolsSection(toolConfig *tools.ToolRegistry) string {
+	return generateToolsSection(toolConfig)
 }
 
 // generateToolsSection 生成工具信息部分

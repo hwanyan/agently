@@ -6,8 +6,16 @@ import (
 	"agent-hwan/pkg/types"
 )
 
-// SetupTools 设置工具
+// SetupTools 设置通用工具（保留兼容性）
 func SetupTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
+	SetupGeneralTools(aiAgent, cfg)
+}
+
+// SetupGeneralTools 设置通用助手的工具集
+// 包含天气、IP查询、二维码、翻译、文本处理、短链接等工具
+func SetupGeneralTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
+	logger.Info("开始注册通用工具组...")
+
 	// 添加天气工具
 	logger.Info("添加天气工具...")
 	weatherTool := NewWeatherTool(cfg.Tools.Weather.APIKey, cfg.Tools.Weather.BaseURL)
@@ -46,5 +54,21 @@ func SetupTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
 
 	// 显示工具统计
 	tools := aiAgent.GetTools()
-	logger.Info("总共添加了 %d 个工具", len(tools))
+	logger.Info("通用工具组注册完成，共 %d 个工具", len(tools))
+}
+
+// SetupMCPTools 设置MCP工具集
+// 通过MCP协议从远程服务器发现并注册工具
+// 参数：
+//   - aiAgent: Agent实例
+//   - mcpTools: 已发现的MCP工具列表（实现了 types.Tool 接口）
+func SetupMCPTools(aiAgent *agent.BasicAgent, mcpTools []types.Tool) {
+	logger.Info("开始注册MCP工具组...")
+
+	for _, tool := range mcpTools {
+		aiAgent.AddTool(tool)
+		logger.Info("MCP工具 [%s] 已添加", tool.Name())
+	}
+
+	logger.Info("MCP工具组注册完成，共 %d 个工具", len(mcpTools))
 }
