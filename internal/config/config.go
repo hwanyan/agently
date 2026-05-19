@@ -44,24 +44,19 @@ func LoadConfiguration() (*types.Config, error) {
 	configPath := "../config/config.yaml"
 	// 读取配置文件
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("  📄 从配置文件加载: %s\n", configPath)
 		// 加载配置文件并验证
 		cfg, err := loadConfigFromFile(configPath)
 		if err == nil {
 			return cfg, nil
 		}
-		fmt.Println("  ⚠️  配置文件中的API密钥未设置，尝试环境变量...")
 	} else {
-		fmt.Println("  ⚠️  配置文件不存在，尝试环境变量...")
 	}
 
 	// 从环境变量加载
-	fmt.Println("  🌍 从环境变量加载配置...")
 	cfg, err := loadConfigFromEnv()
 	if err != nil {
 		return nil, fmt.Errorf("从环境变量加载配置失败: %w", err)
 	}
-	// fmt.Printf("  加载的配置：%v", cfg)
 
 	return cfg, nil
 }

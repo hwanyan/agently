@@ -69,7 +69,7 @@ func GetPrompts(promptDir string) (map[string]string, error) {
 //   - error: 可能的错误
 func GetSystemPrompt(prompts map[string]string, toolRegistry *tools.ToolRegistry) (string, error) {
 	vars := map[string]any{
-		"TOOLS_SECTION": generateToolsSection(toolRegistry),
+		"TOOLS_SECTION": tools.GenerateToolsSection(toolRegistry),
 	}
 	return GetPromptByScene(prompts, GENERAL_PROMPT, vars)
 }
@@ -100,25 +100,6 @@ func GetPromptByScene(prompts map[string]string, scene string, vars map[string]a
 
 	logger.Info("场景 [%s] 提示词替换成功", scene)
 	return result, nil
-}
-
-// GenerateToolsSection 生成工具信息部分（导出，供外部调用）
-func GenerateToolsSection(toolConfig *tools.ToolRegistry) string {
-	return generateToolsSection(toolConfig)
-}
-
-// generateToolsSection 生成工具信息部分
-func generateToolsSection(toolConfig *tools.ToolRegistry) string {
-	var builder strings.Builder
-
-	// 遍历所有工具信息，添加到工具列表中
-	for index, tool := range toolConfig.GetAvailableTools() {
-		builder.WriteString(fmt.Sprintf("%d. **%s**\n", (index + 1), tool.Name))
-		builder.WriteString(fmt.Sprintf("  %s\n", tool.Description))
-		builder.WriteString(fmt.Sprintf("  %s\n", tool.Arguments))
-	}
-
-	return strings.TrimSpace(builder.String())
 }
 
 // replaceTemplateVars 替换模板中的变量
