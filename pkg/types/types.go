@@ -174,6 +174,12 @@ type ToolsConfig struct {
 	ShortURL  ShortURLConfig  `yaml:"short_url"` // 短链接工具配置
 }
 
+// HTTPConfig HTTP服务配置
+type HTTPConfig struct {
+	Port int    `yaml:"port"` // HTTP服务端口
+	Host string `yaml:"host"` // HTTP服务监听地址
+}
+
 // LogConfig 日志配置
 type LogConfig struct {
 	FilePath string `yaml:"file_path"` // 日志文件路径
@@ -186,12 +192,15 @@ type PromptDirConfig struct {
 
 // Config 应用程序总配置
 type Config struct {
-	Log    LogConfig         `yaml:"log"`    // 日志配置
-	Prompt PromptDirConfig   `yaml:"prompt"` // Prompt目录配置
-	LLM    LLMConfig         `yaml:"llm"`    // LLM配置
-	Agents []AgentItemConfig `yaml:"agents"` // 多Agent配置列表
-	Tools  ToolsConfig       `yaml:"tools"`  // 工具配置
-	MCP    MCPConfig         `yaml:"mcp"`    // MCP工具配置
+	Log      LogConfig         `yaml:"log"`      // 日志配置
+	HTTP     HTTPConfig        `yaml:"http"`     // HTTP服务配置
+	Database DatabaseConfig    `yaml:"database"` // 数据库配置
+	JWT      JWTConfig         `yaml:"jwt"`      // JWT 配置
+	Prompt   PromptDirConfig   `yaml:"prompt"`   // Prompt目录配置
+	LLM      LLMConfig         `yaml:"llm"`      // LLM配置
+	Agents   []AgentItemConfig `yaml:"agents"`   // 多Agent配置列表
+	Tools    ToolsConfig       `yaml:"tools"`    // 工具配置
+	MCP      MCPConfig         `yaml:"mcp"`      // MCP工具配置
 }
 
 // ToolParameter 工具参数定义
@@ -244,4 +253,70 @@ type AgentMetrics struct {
 	ToolCallCount   int           `json:"tool_call_count"`  // 工具调用次数
 	ErrorCount      int           `json:"error_count"`      // 错误次数
 	LastResetTime   time.Time     `json:"last_reset_time"`  // 上次重置时间
+}
+
+// ============================================================
+// 数据库配置
+// ============================================================
+
+// DatabaseConfig 数据库配置
+type DatabaseConfig struct {
+	DSN             string `yaml:"dsn"`               // PostgreSQL 连接字符串，如 postgres://user:pass@host:5432/dbname?sslmode=disable
+	MaxOpenConns    int    `yaml:"max_open_conns"`    // 最大打开连接数，默认 20
+	MaxIdleConns    int    `yaml:"max_idle_conns"`    // 最大空闲连接数，默认 5
+	ConnMaxLifetime int    `yaml:"conn_max_lifetime"` // 连接最大存活时间（秒），默认 300
+}
+
+// JWTConfig JWT 配置
+type JWTConfig struct {
+	Secret     string `yaml:"secret"`      // JWT 签名密钥，生产环境必须设置强随机值
+	ExpireHour int    `yaml:"expire_hour"` // Token 有效期（小时），默认 72
+}
+
+// ============================================================
+// 用户与会话领域模型
+// ============================================================
+
+// User 用户模型（对应 users 表）
+type User struct {
+	ID        string     `json:"id"`         // 用户ID
+	Username  string     `json:"username"`   // 用户名
+	Email     string     `json:"email"`      // 邮箱
+	Password  string     `json:"-"`          // 不序列化到 JSON
+	Nickname  string     `json:"nickname"`   // 昵称（非必须）
+	AvatarURL string     `json:"avatar_url"` // 头像 URL（可选）
+	Status    int        `json:"status"`     // 1=正常, 0=禁用
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	LastLogin *time.Time `json:"last_login"`
+}
+
+// Session 会话模型（对应 sessions 表）
+type Session struct {
+	ID         string     `json:"id"`          // 会话ID
+	UserID     string     `json:"user_id"`     // 用户ID
+	AgentID    string     `json:"agent_id"`    // agent ID（agent 的唯一标识，对应 agent 的 Name）
+	Title      string     `json:"title"`       // 会话标题（首条消息自动截取或用户手动设置）
+	Summary    string     `json:"summary"`     // 会话摘要（用于 RAG 检索，可由 LLM 自动生成）
+	Status     int        `json:"status"`      // 1=活跃, 0=已归档
+	MessageCnt int        `json:"message_cnt"` // 消息数量（冗余字段，避免 COUNT 查询）
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	ArchivedAt *time.Time `json:"archived_at"` // 归档时间
+}
+
+// StoredMessage 持久化消息模型（对应 messages 表）
+// 与内存中的 Message 区分，包含数据库特有字段
+type StoredMessage struct {
+	ID           string    `json:"id"`             // 消息ID
+	SessionID    string    `json:"session_id"`     // 会话ID
+	UserID       string    `json:"user_id"`        // 用户ID
+	Role         string    `json:"role"`           // 消息角色: user / assistant / tool / system
+	Content      string    `json:"content"`        // 消息文本内容
+	ToolCallID   string    `json:"tool_call_id"`   // 工具调用ID（role=tool 时有值）
+	ToolCallList string    `json:"tool_call_list"` // 工具调用列表（role=assistant 且有工具调用时有值），这是 JSONB 序列化后的字符串
+	AgentID      string    `json:"agent_id"`       // 处理此消息的 Agent ID
+	TokenCount   int       `json:"token_count"`    // 本条消息消耗的 token 数（估算）
+	Seq          int       `json:"seq"`            // 消息在会话中的顺序号（从 1 开始）
+	CreatedAt    time.Time `json:"created_at"`
 }

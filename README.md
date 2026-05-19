@@ -13,6 +13,9 @@
 - ⚙️ **YAML 配置** — 统一使用 `config.yaml` 管理所有配置项
 - 🔒 **并发安全** — 使用互斥锁 + channel 机制保护对话历史的并发访问
 - 💬 **对话管理** — 每个Agent拥有独立的对话历史和上下文维护
+- 🔑 **用户认证** — JWT 鉴权，支持注册/登录，所有业务接口均需登录态
+- 🗄️ **会话持久化** — 对话历史存储到 PostgreSQL，刷新页面后可完整恢复
+- 🌐 **HTTP API** — 提供完整的 RESTful + SSE 接口，支持前端接入
 
 ## 🤖 内置Agent
 
@@ -47,11 +50,13 @@ agent-hwan/
 │   ├── config/
 │   │   └── config.yaml                  # 统一配置文件（YAML）
 │   └── server/
-│       └── main.go                       # 程序入口（全部Agent注册与交互）
+│       └── main.go                       # 程序入口（Agent注册、CLI交互、HTTP服务）
 ├── internal/
 │   ├── agent/
 │   │   ├── agent.go                      # Agent 核心（对话循环、工具调用、并发控制）
 │   │   └── manager.go                    # Agent 管理器（注册、切换、意图路由）
+│   ├── auth/
+│   │   └── auth.go                       # 用户认证服务（注册、登录、JWT 签发与验证）
 │   ├── config/
 │   │   └── config.go                     # 配置加载与验证
 │   ├── llm/
@@ -60,12 +65,19 @@ agent-hwan/
 │   │   └── stream_scanner.go             # SSE 流式响应解析
 │   ├── logger/
 │   │   └── logger.go                     # 日志系统（INFO/ERROR/WARNING → 文件）
+│   ├── middleware/
+│   │   └── auth.go                       # JWT 鉴权中间件（提取并验证 Bearer Token）
 │   ├── prompt/
 │   │   ├── prompt.go                     # 提示词加载与模板替换
 │   │   ├── general_prompt.yaml           # 通用工具助手系统提示词
 │   │   ├── gold_analysis_prompt.yaml     # 黄金分析助手系统提示词
 │   │   ├── intention_router_prompt.yaml  # 意图路由Agent系统提示词
 │   │   └── scene.go                      # 场景常量定义
+│   ├── store/
+│   │   ├── db.go                         # 数据库连接池管理
+│   │   ├── user.go                       # 用户数据访问对象（CRUD）
+│   │   ├── session.go                    # 会话数据访问对象（创建、查询、归档）
+│   │   └── message.go                    # 消息数据访问对象（保存、查询、内存转换）
 │   └── tools/
 │       ├── setup.go                      # 工具统一注册（支持通用/MCP分组）
 │       ├── registry.go                   # 工具注册表（生成工具描述供 Prompt 使用）
@@ -80,9 +92,11 @@ agent-hwan/
 │       └── shorturl.go                   # 短链接生成工具
 ├── pkg/
 │   ├── types/
-│   │   └── types.go                      # 公共类型定义（Message, Tool, Config 等）
+│   │   └── types.go                      # 公共类型定义（Message, Tool, Config, User, Session 等）
 │   └── utils/
 │       └── utils.go                      # 工具函数
+├── scripts/
+│   └── schema.sql                        # 数据库建表 SQL（users / sessions / messages）
 ├── logs/
 │   └── agent.log                         # 运行日志输出
 ├── REFERENCE/                            # 参考文档
@@ -107,7 +121,23 @@ cd agent-hwan
 go mod tidy
 ```
 
-### 3. 配置
+### 3. 初始化数据库
+
+需要 PostgreSQL 16+，并安装 pgvector 扩展：
+
+```bash
+# 以超级用户连接数据库后执行
+psql -U postgres -d your_database
+
+-- 启用扩展
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 执行建表脚本
+\i scripts/schema.sql
+```
+
+### 4. 配置
 
 编辑 `cmd/config/config.yaml`：
 
@@ -120,19 +150,29 @@ log:
 prompt:
   dir: "../../internal/prompt"
 
+# HTTP 服务配置
+http:
+  host: "0.0.0.0"
+  port: 8088
+
+# 数据库配置（PostgreSQL）
+database:
+  dsn: "postgres://user:password@localhost:5432/agentlydb?sslmode=disable"
+  max_open_conns: 20
+  max_idle_conns: 5
+  conn_max_lifetime: 300
+
+# JWT 配置
+jwt:
+  secret: "your-strong-random-secret"
+  expire_hour: 72
+
 # LLM 配置
 llm:
   provider: "deepseek"
   api_key: "your-api-key"
   model: "deepseek-chat"
   base_url: "https://api.deepseek.com/v1"
-
-# Agent 通用配置
-agent:
-  name: "智能助手"
-  description: "一个能够使用工具的智能AI助手"
-  max_tokens: 4096
-  temperature: 0.7
 
 # 多Agent配置列表（启动时全部注册）
 agents:
@@ -141,16 +181,19 @@ agents:
     description: "自动分析用户意图并路由到合适的专业Agent处理"
     prompt_scene: "intention_router_prompt"
     tool_group: "none"
+    role: "system"
   - id: "general"
     name: "通用工具助手"
     description: "提供天气查询、IP查询、翻译、二维码生成等通用工具服务"
     prompt_scene: "general_prompt"
     tool_group: "general"
+    role: "business"
   - id: "gold_analysis"
     name: "黄金分析助手"
     description: "提供专业的黄金市场分析、行情查询和投资参考服务"
     prompt_scene: "gold_analysis_prompt"
     tool_group: "mcp_gold"
+    role: "business"
 
 # 工具配置
 tools:
@@ -172,14 +215,14 @@ mcp:
       timeout: 30
 ```
 
-### 4. 运行
+### 5. 运行
 
 ```bash
 cd cmd/server
 go run main.go
 ```
 
-### 5. 交互示例
+### 6. 交互示例
 
 ```
 ========== 🤖 AI Agent 助手（多Agent模式） ==========
@@ -211,6 +254,51 @@ go run main.go
 ✅ 已开启自动路由模式，系统将自动判断并分配最合适的Agent
 ```
 
+## 🌐 HTTP API
+
+服务默认监听 `http://localhost:8088`，所有业务接口均需 JWT 鉴权。
+
+### 鉴权方式
+
+```
+Authorization: Bearer <token>
+```
+
+Token 通过注册或登录接口获取，默认有效期 **72 小时**。
+
+### 接口列表
+
+| 方法 | 路径 | 鉴权 | 说明 |
+|------|------|------|------|
+| POST | `/api/auth/register` | ❌ | 用户注册，返回 JWT Token |
+| POST | `/api/auth/login` | ❌ | 用户登录（支持用户名/邮箱），返回 JWT Token |
+| GET | `/api/agents` | ✅ | 获取可用 Agent 列表 |
+| POST | `/api/switch` | ✅ | 切换当前激活的 Agent |
+| GET | `/api/sessions` | ✅ | 查询会话列表（支持按 agent_id 过滤、分页） |
+| POST | `/api/sessions` | ✅ | 创建新会话 |
+| GET | `/api/sessions/{id}/messages` | ✅ | 查询会话消息历史 |
+| POST | `/api/sessions/{id}/chat` | ✅ | 在会话中发送消息（SSE 流式 + 持久化） |
+| DELETE | `/api/sessions/{id}` | ✅ | 归档会话（软删除） |
+
+### SSE 事件格式（聊天接口）
+
+`/api/sessions/{id}/chat` 响应为 `text/event-stream`，包含以下事件：
+
+```
+event: route
+data: {"agent_name": "通用工具助手", "reason": "涉及天气查询"}
+
+event: message
+data: {"content": "北京今天"}
+
+event: done
+data: {}
+```
+
+> 详细接口文档见 `API_DOC.yaml`（OpenAPI 3.0 格式）。
+
+---
+
 ## 🔍 架构设计
 
 ### 多Agent + 意图路由架构
@@ -229,6 +317,22 @@ graph TD
     AG --> LT[本地工具<br/>天气/翻译/IP...]
     AGA --> MCP[MCP Client]
     MCP --> MS[MCP Server<br/>黄金分析工具服务]
+```
+
+### HTTP 服务架构
+
+```mermaid
+graph TD
+    FE[前端 / 客户端] --> |HTTP + JWT| MW[AuthMiddleware<br/>JWT 鉴权中间件]
+    MW --> |注入 user_id| H[Handler]
+    H --> |会话操作| SS[SessionStore<br/>PostgreSQL]
+    H --> |消息操作| MS2[MessageStore<br/>PostgreSQL]
+    H --> |AI 对话| AM2[Agent Manager]
+    AM2 --> AG2[Target Agent]
+    AG2 --> |SSE 流式| FE
+    FE --> |无需鉴权| AUTH[/api/auth/*<br/>注册 / 登录]
+    AUTH --> AS[AuthService<br/>bcrypt + JWT]
+    AS --> US[UserStore<br/>PostgreSQL]
 ```
 
 ### 意图路由流程
@@ -378,18 +482,23 @@ llm:
 |------|------|
 | `github.com/chzyer/readline` | 终端交互（支持历史记录、行编辑） |
 | `github.com/skip2/go-qrcode` | 二维码生成 |
+| `github.com/golang-jwt/jwt/v5` | JWT 签发与验证 |
+| `golang.org/x/crypto` | bcrypt 密码哈希 |
 | `golang.org/x/text` | 文本处理 |
 | `gopkg.in/yaml.v2` | YAML 配置解析 |
 
 ## ⚠️ 注意事项
 
 1. **API 密钥安全**：`config.yaml` 中包含敏感信息，请勿提交到公开仓库（已在 `.gitignore` 中排除）
-2. **网络依赖**：天气、翻译、短链接等工具需要网络访问对应的 API 服务
-3. **翻译服务**：默认使用本地 LibreTranslate 实例（`http://127.0.0.1:5000`），需自行部署或替换为公共实例
-4. **MCP服务**：黄金分析助手依赖 MCP 工具服务端，如服务未启动，Agent 仍可创建但无可用工具
-5. **日志路径**：默认日志输出到 `logs/agent.log`，路径相对于运行目录
-6. **Agent独立性**：每个Agent拥有独立的对话历史和工具集，切换Agent不会丢失之前的对话
-7. **路由Agent**：`intention_router` 是系统Agent，不对外展示，不可手动切换到该Agent
+2. **JWT 密钥**：生产环境必须在 `config.yaml` 的 `jwt.secret` 中设置强随机值，切勿使用默认值
+3. **数据库依赖**：数据库不可用时，HTTP 服务仍可正常启动；所有业务接口（注册/登录/会话/Agent管理）均会返回 **503 Service Unavailable** 并附带明确提示，而非静默 404，前端可据此统一展示「服务暂时不可用，请稍后重试」
+4. **网络依赖**：天气、翻译、短链接等工具需要网络访问对应的 API 服务
+5. **翻译服务**：默认使用本地 LibreTranslate 实例（`http://127.0.0.1:5000`），需自行部署或替换为公共实例
+6. **MCP服务**：黄金分析助手依赖 MCP 工具服务端，如服务未启动，Agent 仍可创建但无可用工具
+7. **日志路径**：默认日志输出到 `logs/agent.log`，路径相对于运行目录
+8. **Agent独立性**：每个Agent拥有独立的对话历史和工具集，切换Agent不会丢失之前的对话
+9. **路由Agent**：`intention_router` 是系统Agent，不对外展示，不可手动切换到该Agent
+10. **消息字段**：持久化消息中工具调用列表字段名为 `tool_call_list`（JSON 序列化后的字符串）
 
 ## 📄 许可证
 

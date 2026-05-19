@@ -1,0 +1,989 @@
+openapi: "3.0.3"
+info:
+  title: Agent-Hwan 智能问答 API
+  version: "1.0.0"
+  description: |
+    Agent-Hwan 是一个多 Agent AI 智能问答系统的后端服务。
+    支持意图自动路由、流式对话（SSE）、多 Agent 切换、对话历史管理等功能。
+
+    ## 基础信息
+    - 后端地址: `http://localhost:8088`
+    - 所有 JSON 接口的 Content-Type 为 `application/json; charset=utf-8`
+    - 聊天接口 `/api/chat` 使用 **SSE (Server-Sent Events)** 协议进行流式响应
+    - 所有接口已启用 CORS，前端可直接跨域调用
+
+    ## 核心概念
+    - **Agent**: 系统中的智能助手，每个 Agent 有独立的能力、工具集和对话历史
+    - **自动路由**: 系统内置一个路由 Agent，会自动分析用户意图并分发到最合适的业务 Agent
+    - **工具调用**: Agent 在回答过程中可能会自动调用外部工具（如天气查询、翻译等），这个过程对用户透明
+    - **流式响应**: 聊天接口通过 SSE 逐字推送 AI 回答，前端可实时渲染
+
+    ## 内置 Agent 列表
+    | Agent ID | 名称 | 功能描述 |
+    |----------|------|----------|
+    | `general` | 通用工具助手 | 天气查询、IP查询、翻译、二维码生成、文本处理、短链接生成 |
+    | `gold_analysis` | 黄金分析助手 | 专业黄金市场分析、行情查询、投资参考 |
+
+    > 注意: 还有一个 `intention_router`（意图路由助手）是系统级 Agent，不对外暴露，不可切换。
+
+servers:
+  - url: http://localhost:8088
+    description: 本地开发服务器
+
+paths:
+  /api/chat:
+    post:
+      summary: 发送消息并获取 AI 流式回答（SSE）
+      description: |
+        这是核心聊天接口。发送用户消息后，服务端通过 **SSE (Server-Sent Events)** 协议逐块推送 AI 的回答。
+
+        ### SSE 事件类型
+
+        响应的 Content-Type 为 `text/event-stream; charset=utf-8`，包含以下事件类型：
+
+        #### 1. `route` 事件（首个事件）
+        告知前端本次消息被路由到了哪个 Agent。
+        ```
+        event: route
+        data: {"agent_name": "通用工具助手", "reason": "涉及天气查询"}
+        ```
+
+        #### 2. `message` 事件（多个，流式文本块）
+        AI 回答的文本片段，前端应将所有 `message` 事件的 `content` 拼接起来形成完整回答。
+        ```
+        event: message
+        data: {"content": "北京今天"}
+
+        event: message
+        data: {"content": "的天气是晴天"}
+
+        event: message
+        data: {"content": "，温度25°C。"}
+        ```
+
+        #### 3. `done` 事件（最后一个事件）
+        标志本次回答结束，前端收到此事件后应关闭 SSE 连接。
+        ```
+        event: done
+        data: {}
+        ```
+
+        #### 4. `error` 事件（异常时）
+        处理过程中出错时发送。
+        ```
+        event: error
+        data: {"error": "错误描述信息"}
+        ```
+
+        ### 前端接入示例（JavaScript）
+        ```javascript
+        async function sendMessage(message, autoRoute = true) {
+          const response = await fetch('http://localhost:8088/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, auto_route: autoRoute })
+          });
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            let eventType = '';
+            for (const line of lines) {
+              if (line.startsWith('event: ')) {
+                eventType = line.slice(7);
+              } else if (line.startsWith('data: ')) {
+                const data = JSON.parse(line.slice(6));
+                switch (eventType) {
+                  case 'route':
+                    console.log(`路由到: ${data.agent_name} (${data.reason})`);
+                    break;
+                  case 'message':
+                    // 将 data.content 追加到界面上
+                    appendToChat(data.content);
+                    break;
+                  case 'done':
+                    console.log('回答完成');
+                    break;
+                  case 'error':
+                    console.error('错误:', data.error);
+                    break;
+                }
+              }
+            }
+          }
+        }
+        ```
+
+        ### Vue 3 接入示例
+        ```javascript
+        // 在 Vue 组件中使用
+        const chatMessage = ref('');
+        const aiResponse = ref('');
+        const currentAgent = ref('');
+        const isLoading = ref(false);
+
+        async function sendChat() {
+          if (!chatMessage.value.trim()) return;
+          isLoading.value = true;
+          aiResponse.value = '';
+
+          try {
+            const response = await fetch('http://localhost:8088/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: chatMessage.value,
+                auto_route: true
+              })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              let eventType = '';
+              for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                  eventType = line.slice(7);
+                } else if (line.startsWith('data: ')) {
+                  const data = JSON.parse(line.slice(6));
+                  if (eventType === 'route') {
+                    currentAgent.value = data.agent_name;
+                  } else if (eventType === 'message') {
+                    aiResponse.value += data.content;
+                  } else if (eventType === 'done') {
+                    isLoading.value = false;
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.error(err);
+          } finally {
+            isLoading.value = false;
+          }
+        }
+        ```
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: 用户发送的消息内容
+                  example: "北京的天气怎么样？"
+                auto_route:
+                  type: boolean
+                  description: |
+                    是否启用自动路由模式（默认 true）。
+                    - true: 系统自动分析用户意图，路由到最合适的 Agent
+                    - false: 使用当前激活的 Agent 处理（需先通过 /api/switch 切换）
+                  default: true
+                  example: true
+      responses:
+        "200":
+          description: SSE 流式响应
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE 事件流，包含以下事件类型:
+                  - `route`: 路由信息 `{"agent_name": "string", "reason": "string"}`
+                  - `message`: 文本片段 `{"content": "string"}`
+                  - `done`: 完成标志 `{}`
+                  - `error`: 错误信息 `{"error": "string"}`
+        "400":
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                code: 400
+                message: "message 不能为空"
+        "405":
+          description: 请求方法不允许
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/agents:
+    get:
+      summary: 获取可用 Agent 列表
+      description: |
+        返回所有可用的业务 Agent 列表（不包含系统级的路由 Agent）。
+        每个 Agent 包含 ID、名称、描述、是否为当前激活 Agent、是否已注册等信息。
+      responses:
+        "200":
+          description: 成功返回 Agent 列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  agents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentItem"
+              example:
+                code: 0
+                agents:
+                  - id: "general"
+                    name: "通用工具助手"
+                    description: "提供天气查询、IP查询、翻译、二维码生成等通用工具服务"
+                    is_active: true
+                    registered: true
+                  - id: "gold_analysis"
+                    name: "黄金分析助手"
+                    description: "提供专业的黄金市场分析、行情查询和投资参考服务"
+                    is_active: false
+                    registered: true
+
+  /api/switch:
+    post:
+      summary: 切换当前激活的 Agent
+      description: |
+        手动切换到指定的业务 Agent。切换后，后续使用 `auto_route: false` 发送的消息将由该 Agent 处理。
+
+        注意：
+        - 不能切换到系统级 Agent（如 `intention_router`）
+        - 切换 Agent 不会清空任何 Agent 的对话历史
+        - 如果使用自动路由模式（`auto_route: true`），系统会自动选择 Agent，此切换仅影响手动模式
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - agent_id
+              properties:
+                agent_id:
+                  type: string
+                  description: 要切换到的 Agent ID
+                  example: "gold_analysis"
+      responses:
+        "200":
+          description: 切换成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  message:
+                    type: string
+                    example: "已切换到: 黄金分析助手"
+                  agent:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: "gold_analysis"
+                      name:
+                        type: string
+                        example: "黄金分析助手"
+        "400":
+          description: 请求参数错误或切换失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                empty_id:
+                  value:
+                    code: 400
+                    message: "agent_id 不能为空"
+                system_agent:
+                  value:
+                    code: 400
+                    message: "不能切换到系统Agent"
+                not_found:
+                  value:
+                    code: 400
+                    message: "切换失败: Agent 'xxx' 不存在"
+
+  /api/history:
+    get:
+      summary: 获取当前 Agent 的对话历史
+      description: |
+        返回当前激活 Agent 的对话历史记录。
+        自动过滤掉 system 类型的消息，只返回 user（用户）、assistant（AI助手）、tool（工具调用结果）三种角色的消息。
+      responses:
+        "200":
+          description: 成功返回对话历史
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HistoryItem"
+              example:
+                code: 0
+                history:
+                  - role: "user"
+                    content: "北京的天气怎么样？"
+                    timestamp: "2026-05-14T18:30:00+08:00"
+                  - role: "assistant"
+                    content: "北京今天天气晴朗，温度25°C，湿度40%，东南风3级。"
+                    timestamp: "2026-05-14T18:30:05+08:00"
+    delete:
+      summary: 清空当前 Agent 的对话历史
+      description: |
+        清空当前激活 Agent 的所有对话历史。清空后 Agent 会重新初始化系统提示词。
+        注意：此操作不可逆。
+      responses:
+        "200":
+          description: 清空成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  message:
+                    type: string
+                    example: "对话历史已清空"
+
+  /api/tools:
+    get:
+      summary: 获取当前 Agent 的可用工具列表
+      description: |
+        返回当前激活 Agent 所拥有的工具列表。不同 Agent 拥有不同的工具集。
+        工具由 Agent 在对话过程中自动调用，前端无需手动触发。
+      responses:
+        "200":
+          description: 成功返回工具列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  tools:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ToolItem"
+              example:
+                code: 0
+                tools:
+                  - name: "qweather"
+                    description: "查询指定城市的实时天气信息"
+                  - name: "ipapi"
+                    description: "查询IP地址或域名的地理位置信息"
+                  - name: "qrcode"
+                    description: "生成二维码图片"
+                  - name: "translate"
+                    description: "多语言文本翻译"
+                  - name: "textprocessor"
+                    description: "文本统计、格式转换、内容提取"
+                  - name: "shorturl"
+                    description: "将长URL转换为短链接"
+
+  /api/auth/register:
+    post:
+      summary: 用户注册
+      description: |
+        注册新用户账号。注册成功后直接返回 JWT Token，无需再次登录。
+        用户名规则：3-64 字符，只允许字母、数字、下划线和连字符。
+        密码规则：最少 6 位，服务端使用 bcrypt 哈希存储。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username:
+                  type: string
+                  example: "alice"
+                email:
+                  type: string
+                  example: "alice@example.com"
+                password:
+                  type: string
+                  example: "mypassword123"
+                nickname:
+                  type: string
+                  example: "Alice"
+      responses:
+        "200":
+          description: 注册成功，返回 Token 和用户信息
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: 参数错误或用户名/邮箱已存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/login:
+    post:
+      summary: 用户登录
+      description: |
+        使用用户名（或邮箱）和密码登录，返回 JWT Token。
+        Token 需在后续鉴权请求中通过 `Authorization: Bearer <token>` 头传递。
+        Token 默认有效期 **72 小时**。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  description: 用户名或邮箱均可
+                  example: "alice"
+                password:
+                  type: string
+                  example: "mypassword123"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: 用户名或密码错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/sessions:
+    get:
+      summary: 获取会话列表（需认证）
+      description: |
+        获取当前登录用户的会话列表，按最近活跃时间倒序。
+        **请求头**: `Authorization: Bearer <token>`
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: query
+          description: 按 Agent 过滤（可选）
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: 成功返回会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionItem"
+        "401":
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: 创建新会话（需认证）
+      description: |
+        创建一个新的对话会话，绑定指定 Agent。
+        **请求头**: `Authorization: Bearer <token>`
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id]
+              properties:
+                agent_id:
+                  type: string
+                  example: "general"
+                title:
+                  type: string
+                  description: 会话标题（可选，为空时由首条消息自动生成）
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  session:
+                    $ref: "#/components/schemas/SessionItem"
+        "400":
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/sessions/{id}/messages:
+    get:
+      summary: 获取会话消息历史（需认证）
+      description: |
+        获取指定会话的消息列表，按 seq 升序。只能访问自己的会话。
+        **请求头**: `Authorization: Bearer <token>`
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: 成功返回消息列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StoredMessage"
+        "401":
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 会话不存在或无权限
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/sessions/{id}/chat:
+    post:
+      summary: 在指定会话中发送消息，带持久化（需认证，SSE）
+      description: |
+        在指定会话中发送消息，AI 回复通过 SSE 流式返回，**消息自动持久化到数据库**。
+        与 `/api/chat` 的区别：消息会存入数据库，刷新页面后历史不丢失。
+        SSE 事件格式与 `/api/chat` 完全相同（route → message × N → done）。
+        **请求头**: `Authorization: Bearer <token>`
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  example: "北京今天天气怎么样？"
+                auto_route:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: SSE 流式响应（格式同 /api/chat）
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 会话不存在或无权限
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/sessions/{id}:
+    delete:
+      summary: 归档（软删除）会话（需认证）
+      description: |
+        将指定会话标记为已归档，不物理删除数据。归档后不再出现在会话列表中。
+        **请求头**: `Authorization: Bearer <token>`
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 归档成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  message:
+                    type: string
+                    example: "会话已归档"
+        "400":
+          description: 会话不存在或已归档
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT Token，通过 /api/auth/login 或 /api/auth/register 获取"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      description: 统一错误响应格式
+      properties:
+        code:
+          type: integer
+          description: HTTP 状态码
+          example: 400
+        message:
+          type: string
+          description: 错误描述信息
+          example: "请求参数错误"
+
+    AgentItem:
+      type: object
+      description: Agent 信息
+      properties:
+        id:
+          type: string
+          description: Agent 唯一标识
+          example: "general"
+        name:
+          type: string
+          description: Agent 显示名称
+          example: "通用工具助手"
+        description:
+          type: string
+          description: Agent 功能描述
+          example: "提供天气查询、IP查询、翻译、二维码生成等通用工具服务"
+        is_active:
+          type: boolean
+          description: 是否为当前激活的 Agent
+          example: true
+        registered:
+          type: boolean
+          description: 是否已成功注册（false 表示依赖服务不可用导致注册失败）
+          example: true
+
+    HistoryItem:
+      type: object
+      description: 对话历史条目
+      properties:
+        role:
+          type: string
+          description: |
+            消息角色:
+            - `user`: 用户发送的消息
+            - `assistant`: AI 助手的回答
+            - `tool`: 工具调用的结果（通常不需要在界面上展示）
+          enum:
+            - user
+            - assistant
+            - tool
+          example: "user"
+        content:
+          type: string
+          description: 消息内容
+          example: "北京的天气怎么样？"
+        timestamp:
+          type: string
+          format: date-time
+          description: 消息时间戳（RFC3339 格式）
+          example: "2026-05-14T18:30:00+08:00"
+
+    ToolItem:
+      type: object
+      description: 工具信息
+      properties:
+        name:
+          type: string
+          description: 工具名称
+          example: "qweather"
+        description:
+          type: string
+          description: 工具功能描述
+          example: "查询指定城市的实时天气信息"
+
+    SSERouteEvent:
+      type: object
+      description: SSE route 事件的 data 字段
+      properties:
+        agent_name:
+          type: string
+          description: 被路由到的 Agent 名称
+          example: "通用工具助手"
+        reason:
+          type: string
+          description: 路由原因
+          example: "涉及天气查询"
+
+    SSEMessageEvent:
+      type: object
+      description: SSE message 事件的 data 字段
+      properties:
+        content:
+          type: string
+          description: AI 回答的文本片段
+          example: "北京今天"
+
+    SSEErrorEvent:
+      type: object
+      description: SSE error 事件的 data 字段
+      properties:
+        error:
+          type: string
+          description: 错误描述
+          example: "处理消息时出错"
+
+    AuthResponse:
+      type: object
+      description: 认证成功响应（注册/登录）
+      properties:
+        code:
+          type: integer
+          example: 0
+        token:
+          type: string
+          description: JWT Token，有效期 72 小时，后续请求放入 Authorization 头
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        user:
+          $ref: "#/components/schemas/UserInfo"
+
+    UserInfo:
+      type: object
+      description: 用户信息（不含密码）
+      properties:
+        id:
+          type: string
+          description: 用户 UUID
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        username:
+          type: string
+          example: "alice"
+        email:
+          type: string
+          example: "alice@example.com"
+        nickname:
+          type: string
+          example: "Alice"
+        avatar_url:
+          type: string
+          example: ""
+        status:
+          type: integer
+          description: "账号状态: 1=正常, 0=禁用"
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-05-14T18:00:00+08:00"
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-05-14T19:00:00+08:00"
+
+    SessionItem:
+      type: object
+      description: 会话信息
+      properties:
+        id:
+          type: string
+          description: 会话 UUID
+          example: "660e8400-e29b-41d4-a716-446655440001"
+        user_id:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        agent_id:
+          type: string
+          description: 绑定的 Agent ID
+          example: "general"
+        title:
+          type: string
+          description: 会话标题（首条消息前 50 字自动生成）
+          example: "北京天气查询"
+        summary:
+          type: string
+          description: 会话摘要（预留给 RAG 检索使用）
+          example: ""
+        status:
+          type: integer
+          description: "会话状态: 1=活跃, 0=已归档"
+          example: 1
+        message_cnt:
+          type: integer
+          description: 消息总数
+          example: 4
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-05-14T18:00:00+08:00"
+        updated_at:
+          type: string
+          format: date-time
+          description: 最后活跃时间
+          example: "2026-05-14T19:30:00+08:00"
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+
+    StoredMessage:
+      type: object
+      description: 持久化消息（从数据库读取）
+      properties:
+        id:
+          type: string
+          description: 消息 UUID
+          example: "770e8400-e29b-41d4-a716-446655440002"
+        session_id:
+          type: string
+          example: "660e8400-e29b-41d4-a716-446655440001"
+        user_id:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        role:
+          type: string
+          enum: [user, assistant, tool, system]
+          example: "user"
+        content:
+          type: string
+          example: "北京今天天气怎么样？"
+        tool_call_id:
+          type: string
+          description: 工具调用 ID（role=tool 时有值）
+          example: ""
+        tool_calls:
+          type: string
+          description: JSON 格式的工具调用列表（role=assistant 且触发工具时有值）
+          example: ""
+        agent_id:
+          type: string
+          description: 处理此消息的 Agent ID
+          example: "general"
+        token_count:
+          type: integer
+          description: 消耗的 token 数（估算）
+          example: 0
+        seq:
+          type: integer
+          description: 消息在会话中的顺序号（从 1 开始）
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-05-14T18:30:00+08:00"

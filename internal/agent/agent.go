@@ -17,7 +17,7 @@ import (
 // BasicAgent 基础AI Agent实现
 // 这是一个完整的AI Agent实现，包含对话管理、工具调用等功能
 type BasicAgent struct {
-	name         string                // Agent名称
+	name         string                // Agent名称（作为识别 agent 的唯一标识）
 	description  string                // Agent描述
 	llmClient    types.LLMClient       // LLM客户端
 	systemPrompt string                // 系统提示词

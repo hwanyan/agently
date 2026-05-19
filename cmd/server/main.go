@@ -3,16 +3,22 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"agent-hwan/internal/agent"
+	"agent-hwan/internal/auth"
 	"agent-hwan/internal/config"
 	"agent-hwan/internal/llm"
 	"agent-hwan/internal/logger"
+	"agent-hwan/internal/middleware"
 	"agent-hwan/internal/prompt"
+	"agent-hwan/internal/store"
 	"agent-hwan/internal/tools"
 	"agent-hwan/internal/tools/mcp"
 	"agent-hwan/pkg/types"
@@ -78,8 +84,49 @@ func main() {
 	}
 	logger.Info("Agent管理器创建成功，全部Agent已注册，系统Agent校验通过")
 
-	// 第六步：开始交互
-	logger.Info("步骤6: 开始交互")
+	// 第六步：为 HTTP 服务创建独立的 Agent 实例
+	logger.Info("步骤6: 为HTTP服务创建独立的Agent实例...")
+	httpAgentManager := initAllAgents(cfg, llmClient, prompts, toolInfos)
+	if err := httpAgentManager.ValidateSystemAgents(); err != nil {
+		logger.Error("HTTP Agent管理器系统Agent校验失败: %v", err)
+		log.Fatalf("❌ HTTP Agent管理器: %v", err)
+		os.Exit(0)
+	}
+	logger.Info("HTTP Agent管理器创建成功")
+
+	// 第七步：初始化数据库和认证服务
+	logger.Info("步骤7: 初始化数据库连接...")
+	var db *store.DB
+	var authSvc *auth.Service
+	var userStore *store.UserStore
+	var sessionStore *store.SessionStore
+	var messageStore *store.MessageStore
+
+	if cfg.Database.DSN != "" {
+		db, err = store.New(cfg.Database)
+		if err != nil {
+			logger.Error("数据库连接失败: %v（HTTP服务将以无持久化模式运行）", err)
+			fmt.Printf("  ⚠️  数据库连接失败: %v\n  ℹ️  HTTP服务将以无持久化模式运行\n", err)
+		} else {
+			defer db.Close()
+			userStore = store.NewUserStore(db)
+			sessionStore = store.NewSessionStore(db)
+			messageStore = store.NewMessageStore(db)
+			authSvc = auth.NewService(userStore, cfg.JWT)
+			logger.Info("数据库连接成功，认证服务已初始化")
+			fmt.Println("  ✅ 数据库连接成功")
+		}
+	} else {
+		logger.Info("未配置数据库 DSN，跳过数据库初始化")
+		fmt.Println("  ⚠️  未配置数据库 DSN，跳过数据库初始化")
+	}
+
+	// 第八步：启动 HTTP 服务（后台运行）
+	logger.Info("步骤8: 启动HTTP服务...")
+	go startHTTPServer(cfg, httpAgentManager, authSvc, sessionStore, messageStore)
+
+	// 第九步：开始CLI交互
+	logger.Info("步骤9: 开始CLI交互")
 	fmt.Println("================ END ================")
 	startInteractiveSession(agentManager)
 }
@@ -574,4 +621,538 @@ func truncateMessage(content string, maxLen int) string {
 		return content
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+// ==================== HTTP 服务相关 ====================
+
+// corsMiddleware 处理跨域请求的中间件
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		// 处理预检请求
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+// jsonResponse 统一的 JSON 响应辅助函数
+func jsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
+}
+
+// jsonError 统一的 JSON 错误响应辅助函数
+func jsonError(w http.ResponseWriter, statusCode int, message string) {
+	jsonResponse(w, statusCode, map[string]interface{}{
+		"code":    statusCode,
+		"message": message,
+	})
+}
+
+// startHTTPServer 启动 HTTP 服务
+func startHTTPServer(
+	cfg *types.Config,
+	manager *agent.Manager,
+	authSvc *auth.Service,
+	sessionStore *store.SessionStore,
+	messageStore *store.MessageStore,
+) {
+	// 确定监听地址
+	host := cfg.HTTP.Host
+	if host == "" {
+		host = "0.0.0.0"
+	}
+	port := cfg.HTTP.Port
+	if port == 0 {
+		port = 8088
+	}
+	addr := fmt.Sprintf("%s:%d", host, port)
+
+	// 注册路由
+	mux := http.NewServeMux()
+
+	// dbUnavailable 返回一个数据库不可用时的 503 兜底 Handler
+	dbUnavailable := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		jsonError(w, http.StatusServiceUnavailable, "数据库服务不可用，请稍后重试")
+	}
+
+	// 认证相关路由（无需鉴权）
+	if authSvc != nil {
+		mux.HandleFunc("/api/auth/register", corsMiddleware(handleRegister(authSvc)))
+		mux.HandleFunc("/api/auth/login", corsMiddleware(handleLogin(authSvc)))
+	} else {
+		mux.HandleFunc("/api/auth/register", corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/auth/login", corsMiddleware(dbUnavailable))
+	}
+
+	// 会话相关路由（需要鉴权）
+	if authSvc != nil && sessionStore != nil && messageStore != nil {
+		mux.HandleFunc("/api/sessions", corsMiddleware(middleware.AuthMiddleware(authSvc, handleSessions(manager, sessionStore, messageStore))))
+		mux.HandleFunc("/api/sessions/", corsMiddleware(middleware.AuthMiddleware(authSvc, handleSessionDetail(manager, sessionStore, messageStore))))
+		mux.HandleFunc("/api/agents", corsMiddleware(middleware.AuthMiddleware(authSvc, handleAgents(manager))))
+		mux.HandleFunc("/api/switch", corsMiddleware(middleware.AuthMiddleware(authSvc, handleSwitch(manager))))
+	} else {
+		mux.HandleFunc("/api/sessions", corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/sessions/", corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agents", corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/switch", corsMiddleware(dbUnavailable))
+	}
+
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second, // 流式响应需要较长的写超时
+		IdleTimeout:  60 * time.Second,
+	}
+
+	fmt.Printf("\n🌐 HTTP 服务已启动: http://%s\n", addr)
+	logger.Info("HTTP服务启动，监听地址: %s", addr)
+
+	if err := server.ListenAndServe(); err != nil {
+		logger.Error("HTTP服务启动失败: %v", err)
+		log.Printf("❌ HTTP服务启动失败: %v", err)
+	}
+}
+
+// handleAgents 获取可用 Agent 列表
+// GET /api/agents
+func handleAgents(manager *agent.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			jsonError(w, http.StatusMethodNotAllowed, "仅支持 GET 请求")
+			return
+		}
+
+		agents := manager.List()
+
+		// 转换为 JSON 友好的结构
+		type AgentItem struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			IsActive    bool   `json:"is_active"`
+			Registered  bool   `json:"registered"`
+		}
+
+		var items []AgentItem
+		for _, ag := range agents {
+			items = append(items, AgentItem{
+				ID:          ag.ID,
+				Name:        ag.Name,
+				Description: ag.Description,
+				IsActive:    ag.IsActive,
+				Registered:  ag.Registered,
+			})
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"code":   0,
+			"agents": items,
+		})
+	}
+}
+
+// handleSwitch 切换当前 Agent
+// POST /api/switch
+// 请求体: {"agent_id": "general"}
+func handleSwitch(manager *agent.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			jsonError(w, http.StatusMethodNotAllowed, "仅支持 POST 请求")
+			return
+		}
+
+		var req struct {
+			AgentID string `json:"agent_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+			return
+		}
+		if req.AgentID == "" {
+			jsonError(w, http.StatusBadRequest, "agent_id 不能为空")
+			return
+		}
+
+		// 不允许切换到系统Agent
+		if manager.IsSystemAgent(req.AgentID) {
+			jsonError(w, http.StatusBadRequest, "不能切换到系统Agent")
+			return
+		}
+
+		if err := manager.Switch(req.AgentID); err != nil {
+			jsonError(w, http.StatusBadRequest, "切换失败: "+err.Error())
+			return
+		}
+
+		currentAgent, _ := manager.Current()
+		jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"code":    0,
+			"message": fmt.Sprintf("已切换到: %s", currentAgent.GetName()),
+			"agent": map[string]string{
+				"id":   req.AgentID,
+				"name": currentAgent.GetName(),
+			},
+		})
+	}
+}
+
+// ==================== 认证相关 Handler ====================
+
+// handleRegister 用户注册
+// POST /api/auth/register
+// 请求体: {"username": "xxx", "email": "xxx@xx.com", "password": "xxx", "nickname": "xxx"}
+func handleRegister(authSvc *auth.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			jsonError(w, http.StatusMethodNotAllowed, "仅支持 POST 请求")
+			return
+		}
+
+		var req struct {
+			Username string `json:"username"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
+			Nickname string `json:"nickname"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+			return
+		}
+
+		user, token, err := authSvc.Register(req.Username, req.Email, req.Password, req.Nickname)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"code":  0,
+			"token": token,
+			"user":  user,
+		})
+	}
+}
+
+// handleLogin 用户登录
+// POST /api/auth/login
+// 请求体: {"username": "xxx", "password": "xxx"}
+func handleLogin(authSvc *auth.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			jsonError(w, http.StatusMethodNotAllowed, "仅支持 POST 请求")
+			return
+		}
+
+		var req struct {
+			Username string `json:"username"` // 支持用户名或邮箱
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+			return
+		}
+
+		user, token, err := authSvc.Login(req.Username, req.Password)
+		if err != nil {
+			jsonError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"code":  0,
+			"token": token,
+			"user":  user,
+		})
+	}
+}
+
+// ==================== 会话相关 Handler ====================
+
+// handleSessions 会话列表 & 创建会话
+// GET  /api/sessions?agent_id=general&limit=20&offset=0  — 查询会话列表
+// POST /api/sessions  — 创建新会话
+func handleSessions(
+	manager *agent.Manager,
+	sessionStore *store.SessionStore,
+	messageStore *store.MessageStore,
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.GetUserID(r)
+
+		switch r.Method {
+		case http.MethodGet:
+			// 查询会话列表
+			agentID := r.URL.Query().Get("agent_id")
+			limit := 20
+			offset := 0
+			if v := r.URL.Query().Get("limit"); v != "" {
+				fmt.Sscanf(v, "%d", &limit)
+			}
+			if v := r.URL.Query().Get("offset"); v != "" {
+				fmt.Sscanf(v, "%d", &offset)
+			}
+			if limit > 100 {
+				limit = 100
+			}
+
+			sessions, err := sessionStore.ListByUser(userID, agentID, limit, offset)
+			if err != nil {
+				jsonError(w, http.StatusInternalServerError, "查询会话列表失败: "+err.Error())
+				return
+			}
+
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
+				"code":     0,
+				"sessions": sessions,
+			})
+
+		case http.MethodPost:
+			// 创建新会话
+			var req struct {
+				AgentID string `json:"agent_id"`
+				Title   string `json:"title"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				jsonError(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+				return
+			}
+			if req.AgentID == "" {
+				jsonError(w, http.StatusBadRequest, "agent_id 不能为空")
+				return
+			}
+			// 校验 agent_id 是否存在
+			if _, exists := manager.Get(req.AgentID); !exists {
+				jsonError(w, http.StatusBadRequest, "Agent 不存在: "+req.AgentID)
+				return
+			}
+
+			session, err := sessionStore.Create(userID, req.AgentID, req.Title)
+			if err != nil {
+				jsonError(w, http.StatusInternalServerError, "创建会话失败: "+err.Error())
+				return
+			}
+
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
+				"code":    0,
+				"session": session,
+			})
+
+		default:
+			jsonError(w, http.StatusMethodNotAllowed, "仅支持 GET 和 POST 请求")
+		}
+	}
+}
+
+// handleSessionDetail 会话详情操作
+// GET    /api/sessions/{id}/messages  — 查询会话消息历史
+// POST   /api/sessions/{id}/chat      — 在指定会话中发送消息（SSE）
+// DELETE /api/sessions/{id}           — 归档（软删除）会话
+func handleSessionDetail(
+	manager *agent.Manager,
+	sessionStore *store.SessionStore,
+	messageStore *store.MessageStore,
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.GetUserID(r)
+
+		// 解析路径：/api/sessions/{id} 或 /api/sessions/{id}/messages 或 /api/sessions/{id}/chat
+		path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+		parts := strings.SplitN(path, "/", 2)
+		sessionID := parts[0]
+		subPath := ""
+		if len(parts) == 2 {
+			subPath = parts[1]
+		}
+
+		if sessionID == "" {
+			jsonError(w, http.StatusBadRequest, "缺少会话 ID")
+			return
+		}
+
+		switch {
+		case subPath == "messages" && r.Method == http.MethodGet:
+			// 查询会话消息历史
+			// 先校验会话归属
+			session, err := sessionStore.GetByID(sessionID, userID)
+			if err != nil || session == nil {
+				jsonError(w, http.StatusNotFound, "会话不存在或无权限")
+				return
+			}
+
+			limit := 100
+			offset := 0
+			if v := r.URL.Query().Get("limit"); v != "" {
+				fmt.Sscanf(v, "%d", &limit)
+			}
+			if v := r.URL.Query().Get("offset"); v != "" {
+				fmt.Sscanf(v, "%d", &offset)
+			}
+
+			msgs, err := messageStore.ListBySession(sessionID, userID, limit, offset)
+			if err != nil {
+				jsonError(w, http.StatusInternalServerError, "查询消息失败: "+err.Error())
+				return
+			}
+
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
+				"code":     0,
+				"messages": msgs,
+			})
+
+		case subPath == "chat" && r.Method == http.MethodPost:
+			// 在指定会话中发送消息（SSE 流式）
+			session, err := sessionStore.GetByID(sessionID, userID)
+			if err != nil || session == nil {
+				jsonError(w, http.StatusNotFound, "会话不存在或无权限")
+				return
+			}
+
+			var req struct {
+				Message   string `json:"message"`
+				AutoRoute *bool  `json:"auto_route"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				jsonError(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+				return
+			}
+			if strings.TrimSpace(req.Message) == "" {
+				jsonError(w, http.StatusBadRequest, "message 不能为空")
+				return
+			}
+
+			// 自动路由
+			autoRoute := true
+			if req.AutoRoute != nil {
+				autoRoute = *req.AutoRoute
+			}
+
+			ctx := r.Context()
+			var targetAgent *agent.BasicAgent
+			var routeInfo string
+			var routedAgentID string
+
+			if autoRoute {
+				routedID, reason, err := manager.Route(ctx, req.Message)
+				if err != nil {
+					targetAgent, _ = manager.Current()
+					routedAgentID = session.AgentID
+					routeInfo = "路由失败，使用会话默认Agent"
+				} else {
+					targetAgent, _ = manager.Get(routedID)
+					routedAgentID = routedID
+					routeInfo = reason
+				}
+			} else {
+				var exists bool
+				targetAgent, exists = manager.Get(session.AgentID)
+				if !exists {
+					jsonError(w, http.StatusInternalServerError, "Agent 不可用: "+session.AgentID)
+					return
+				}
+				routedAgentID = session.AgentID
+				routeInfo = "手动模式"
+			}
+
+			// 设置 SSE 响应头
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			w.Header().Set("X-Accel-Buffering", "no")
+
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				jsonError(w, http.StatusInternalServerError, "服务器不支持流式响应")
+				return
+			}
+
+			// 发送路由信息
+			routeData, _ := json.Marshal(map[string]string{
+				"agent_name": targetAgent.GetName(),
+				"reason":     routeInfo,
+			})
+			fmt.Fprintf(w, "event: route\ndata: %s\n\n", string(routeData))
+			flusher.Flush()
+
+			// 持久化用户消息
+			userMsg := types.Message{
+				Role:    "user",
+				Content: req.Message,
+			}
+			if _, err := messageStore.SaveMessage(sessionID, userID, routedAgentID, userMsg); err != nil {
+				logger.Error("持久化用户消息失败: %v", err)
+			}
+			// 如果会话标题为空，用首条消息的前 50 字作为标题
+			if session.Title == "" {
+				title := []rune(req.Message)
+				if len(title) > 50 {
+					title = title[:50]
+				}
+				_ = sessionStore.UpdateTitle(sessionID, userID, string(title))
+			}
+
+			// 流式处理消息
+			responseStream, err := targetAgent.ProcessMessageStream(ctx, req.Message)
+			if err != nil {
+				errData, _ := json.Marshal(map[string]string{"error": err.Error()})
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errData))
+				flusher.Flush()
+				return
+			}
+
+			// 收集完整响应并流式输出
+			var fullResponse strings.Builder
+			for chunk := range responseStream {
+				fullResponse.WriteString(chunk)
+				chunkData, _ := json.Marshal(map[string]string{"content": chunk})
+				fmt.Fprintf(w, "event: message\ndata: %s\n\n", string(chunkData))
+				flusher.Flush()
+			}
+
+			// 持久化 AI 回复
+			if fullResponse.Len() > 0 {
+				aiMsg := types.Message{
+					Role:    "assistant",
+					Content: fullResponse.String(),
+				}
+				if _, err := messageStore.SaveMessage(sessionID, userID, routedAgentID, aiMsg); err != nil {
+					logger.Error("持久化AI回复失败: %v", err)
+				}
+			}
+
+			fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+			flusher.Flush()
+
+		case subPath == "" && r.Method == http.MethodDelete:
+			// 归档会话
+			if err := sessionStore.Archive(sessionID, userID); err != nil {
+				jsonError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
+				"code":    0,
+				"message": "会话已归档",
+			})
+
+		default:
+			jsonError(w, http.StatusNotFound, "接口不存在")
+		}
+	}
 }

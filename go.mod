@@ -1,12 +1,15 @@
 module agent-hwan
 
-go 1.24.5
+go 1.25.0
 
 require (
 	github.com/chzyer/readline v1.5.1
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/lib/pq v1.12.3
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	golang.org/x/text v0.30.0
+	golang.org/x/crypto v0.51.0
+	golang.org/x/text v0.37.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-require golang.org/x/sys v0.0.0-20220310020820-b874c991c1a5 // indirect
+require golang.org/x/sys v0.44.0 // indirect
