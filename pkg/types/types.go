@@ -59,6 +59,31 @@ type StreamChunk struct {
 	Done         bool       // 是否是最后一个 chunk（汇总工具调用信息）
 }
 
+// StreamEventType 流式事件类型
+type StreamEventType string
+
+const (
+	// StreamEventContent 文本内容事件
+	StreamEventContent StreamEventType = "content"
+	// StreamEventToolCall 工具调用开始事件
+	StreamEventToolCall StreamEventType = "tool_call"
+	// StreamEventToolResult 工具调用结果事件
+	StreamEventToolResult StreamEventType = "tool_result"
+	// StreamEventError 错误事件
+	StreamEventError StreamEventType = "error"
+)
+
+// StreamEvent 流式响应事件
+// 通过事件驱动的方式向调用方传递流式处理过程中的各类信息
+type StreamEvent struct {
+	Type       StreamEventType // 事件类型
+	Content    string          // 文本内容（Type=content 时有值）
+	ToolName   string          // 工具名称（Type=tool_call/tool_result 时有值）
+	ToolArgs   string          // 工具参数（Type=tool_call 时有值，JSON格式）
+	ToolResult string          // 工具执行结果（Type=tool_result 时有值）
+	Error      string          // 错误信息（Type=error 时有值）
+}
+
 // LLMClient 接口定义了与大语言模型交互的方法
 // 不同的 LLM 提供商需要实现这个接口
 type LLMClient interface {
@@ -82,8 +107,8 @@ type Agent interface {
 	// ProcessMessage 处理用户消息并返回响应
 	ProcessMessage(ctx context.Context, userMessage string) (string, error)
 
-	// ProcessMessageStream 流式处理用户消息
-	ProcessMessageStream(ctx context.Context, userMessage string) (<-chan string, error)
+	// ProcessMessageStream 流式处理用户消息，返回事件流
+	ProcessMessageStream(ctx context.Context, userMessage string) (<-chan StreamEvent, error)
 
 	// AddTool 添加工具
 	AddTool(tool Tool)

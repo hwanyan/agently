@@ -10,6 +10,7 @@ import (
 
 	"agent-hwan/internal/agent"
 	"agent-hwan/internal/logger"
+	"agent-hwan/pkg/types"
 
 	"github.com/chzyer/readline"
 )
@@ -147,14 +148,23 @@ func (c *CLIService) Start() {
 		// 清除"正在思考..."并开始流式输出
 		fmt.Print("\r🤖 助手: ")
 
-		// 收集完整响应
+		// 收集完整响应和工具调用信息
 		var fullResponse strings.Builder
 		var toolCalls []string
 
-		// 读取并显示流式响应
-		for chunk := range responseStream {
-			fmt.Print(chunk)
-			fullResponse.WriteString(chunk)
+		// 读取并处理流式事件
+		for event := range responseStream {
+			switch event.Type {
+			case types.StreamEventContent:
+				fmt.Print(event.Content)
+				fullResponse.WriteString(event.Content)
+			case types.StreamEventToolCall:
+				toolCalls = append(toolCalls, event.ToolName)
+			case types.StreamEventToolResult:
+				// 工具结果已在agent层记录日志，此处无需额外处理
+			case types.StreamEventError:
+				fmt.Printf("\n❌ %s", event.Error)
+			}
 		}
 
 		// 记录处理结果
@@ -164,7 +174,7 @@ func (c *CLIService) Start() {
 
 		// 记录工具调用情况
 		if len(toolCalls) > 0 {
-			logger.Info("工具调用: %v", toolCalls)
+			logger.Info("本次对话使用工具: %v", toolCalls)
 		} else {
 			logger.Info("本次对话未使用工具")
 		}

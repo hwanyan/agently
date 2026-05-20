@@ -105,14 +105,15 @@ func (a *BasicAgent) ProcessMessage(ctx context.Context, userMessage string) (st
 
 // ProcessMessageStream 流式处理用户消息
 // 支持工具调用：当 LLM 返回工具调用时，会自动执行工具并重新请求 LLM 生成最终响应
+// 返回事件流，调用方可以根据事件类型做不同处理
 // 参数：
 //   - ctx: 上下文
 //   - userMessage: 用户消息
 //
 // 返回：
-//   - <-chan string: 流式响应通道
+//   - <-chan types.StreamEvent: 流式事件通道
 //   - error: 可能的错误
-func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage string) (<-chan string, error) {
+func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage string) (<-chan types.StreamEvent, error) {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
@@ -126,11 +127,11 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 	done := make(chan struct{})
 	a.streamDone = done
 
-	// 创建包装的流式响应，用于收集完整响应并输出
-	wrappedStream := make(chan string, 100)
+	// 创建事件流通道
+	eventStream := make(chan types.StreamEvent, 100)
 
 	go func() {
-		defer close(wrappedStream)
+		defer close(eventStream)
 		defer close(done) // 标记流式 history 写入完成
 
 		// 工具调用循环
@@ -142,7 +143,10 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 			rawStream, err := a.llmClient.ChatStream(ctx, a.history, tools)
 			if err != nil {
 				logger.Error("流式LLM调用失败: %v", err)
-				wrappedStream <- fmt.Sprintf("错误: %v", err)
+				eventStream <- types.StreamEvent{
+					Type:  types.StreamEventError,
+					Error: fmt.Sprintf("LLM调用失败: %v", err),
+				}
 				return
 			}
 
@@ -151,10 +155,13 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 
 			// 读取流式响应
 			for chunk := range rawStream {
-				// 转发文本内容到输出通道
+				// 转发文本内容事件
 				if chunk.Content != "" {
 					fullResponse.WriteString(chunk.Content)
-					wrappedStream <- chunk.Content
+					eventStream <- types.StreamEvent{
+						Type:    types.StreamEventContent,
+						Content: chunk.Content,
+					}
 				}
 				// 收集工具调用信息
 				if len(chunk.ToolCallList) > 0 {
@@ -174,10 +181,13 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 				}
 				a.history = append(a.history, aiMessage)
 
-				// 执行工具调用
-				if e := a.processToolCalls(ctx, toolCallList); e != nil {
+				// 执行工具调用并发送事件
+				if e := a.processToolCallsWithEvents(ctx, toolCallList, eventStream); e != nil {
 					logger.Error("流式模式处理工具调用失败: %v", e)
-					wrappedStream <- fmt.Sprintf("\n工具调用失败: %v", e)
+					eventStream <- types.StreamEvent{
+						Type:  types.StreamEventError,
+						Error: fmt.Sprintf("工具调用失败: %v", e),
+					}
 					return
 				}
 
@@ -202,7 +212,7 @@ func (a *BasicAgent) ProcessMessageStream(ctx context.Context, userMessage strin
 		}
 	}()
 
-	return wrappedStream, nil
+	return eventStream, nil
 }
 
 // AddTool 添加工具到Agent
@@ -363,6 +373,75 @@ func (a *BasicAgent) processToolCalls(ctx context.Context, toolCalls []types.Too
 		// 成功执行需添加工具执行结果到历史记录
 		logger.Info("工具[%s]执行成功, 结果: %s", toolCall.Function.Name, result)
 		a.addToolMessage(toolCall.ID, result)
+	}
+
+	return nil
+}
+
+// processToolCallsWithEvents 处理工具调用并向事件流发送事件
+// 与 processToolCalls 类似，但会通过 eventStream 通知调用方工具调用的过程
+func (a *BasicAgent) processToolCallsWithEvents(ctx context.Context, toolCalls []types.ToolCall, eventStream chan<- types.StreamEvent) error {
+	for _, toolCall := range toolCalls {
+		logger.Info("开始调用工具: %s, 参数: %s", toolCall.Function.Name, toolCall.Function.Arguments)
+
+		// 发送工具调用开始事件
+		eventStream <- types.StreamEvent{
+			Type:     types.StreamEventToolCall,
+			ToolName: toolCall.Function.Name,
+			ToolArgs: toolCall.Function.Arguments,
+		}
+
+		// 查找对应的工具
+		tool, exists := a.tools[toolCall.Function.Name]
+		if !exists {
+			errorMsg := fmt.Sprintf("工具 '%s' 不存在", toolCall.Function.Name)
+			logger.Error("工具调用失败: %s", errorMsg)
+			a.addToolMessage(toolCall.ID, errorMsg)
+			// 发送工具结果事件（失败）
+			eventStream <- types.StreamEvent{
+				Type:       types.StreamEventError,
+				ToolName:   toolCall.Function.Name,
+				ToolResult: errorMsg,
+			}
+			continue
+		}
+
+		// 解析工具参数
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+			errorMsg := fmt.Sprintf("解析工具参数失败: %v", err)
+			logger.Error("工具[%s]参数解析失败: %v", toolCall.Function.Name, err)
+			a.addToolMessage(toolCall.ID, errorMsg)
+			eventStream <- types.StreamEvent{
+				Type:       types.StreamEventError,
+				ToolName:   toolCall.Function.Name,
+				ToolResult: errorMsg,
+			}
+			continue
+		}
+
+		// 执行工具
+		result, err := tool.Execute(ctx, args)
+		if err != nil {
+			errorMsg := fmt.Sprintf("工具执行失败: %v", err)
+			logger.Error("工具[%s]执行失败: %v", toolCall.Function.Name, err)
+			a.addToolMessage(toolCall.ID, errorMsg)
+			eventStream <- types.StreamEvent{
+				Type:       types.StreamEventError,
+				ToolName:   toolCall.Function.Name,
+				ToolResult: errorMsg,
+			}
+			continue
+		}
+
+		// 成功执行
+		logger.Info("工具[%s]执行成功, 结果: %s", toolCall.Function.Name, result)
+		a.addToolMessage(toolCall.ID, result)
+		eventStream <- types.StreamEvent{
+			Type:       types.StreamEventToolResult,
+			ToolName:   toolCall.Function.Name,
+			ToolResult: result,
+		}
 	}
 
 	return nil

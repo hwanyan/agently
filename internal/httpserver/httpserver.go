@@ -561,11 +561,26 @@ func (h *HTTPService) handleSessionDetail() http.HandlerFunc {
 
 			// 收集完整响应并流式输出
 			var fullResponse strings.Builder
-			for chunk := range responseStream {
-				fullResponse.WriteString(chunk)
-				chunkData, _ := json.Marshal(map[string]string{"content": chunk})
-				fmt.Fprintf(w, "event: message\ndata: %s\n\n", string(chunkData))
-				flusher.Flush()
+			for event := range responseStream {
+				switch event.Type {
+				case types.StreamEventContent:
+					fullResponse.WriteString(event.Content)
+					chunkData, _ := json.Marshal(map[string]string{"content": event.Content})
+					fmt.Fprintf(w, "event: message\ndata: %s\n\n", string(chunkData))
+					flusher.Flush()
+				case types.StreamEventToolCall:
+					toolData, _ := json.Marshal(map[string]string{"tool_name": event.ToolName, "tool_args": event.ToolArgs})
+					fmt.Fprintf(w, "event: tool_call\ndata: %s\n\n", string(toolData))
+					flusher.Flush()
+				case types.StreamEventToolResult:
+					resultData, _ := json.Marshal(map[string]string{"tool_name": event.ToolName, "tool_result": event.ToolResult})
+					fmt.Fprintf(w, "event: tool_result\ndata: %s\n\n", string(resultData))
+					flusher.Flush()
+				case types.StreamEventError:
+					errData, _ := json.Marshal(map[string]string{"error": event.Error})
+					fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errData))
+					flusher.Flush()
+				}
 			}
 
 			// 记录处理结果
