@@ -1,6 +1,8 @@
-package tools
+// 通用智能助手 agent 的工具：文本处理工具（本地工具，随项目启动）
+package local
 
 import (
+	"agent-hwan/pkg/types"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -14,6 +16,13 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
+
+// 工具自注册
+func init() {
+	Register("general", func(cfg *types.Config) types.Tool {
+		return NewTextProcessorTool()
+	})
+}
 
 // 文本处理工具常量
 const (

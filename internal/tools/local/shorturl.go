@@ -1,6 +1,8 @@
-package tools
+// 通用智能助手 agent 的工具：短链接生成工具（本地工具，随项目启动）
+package local
 
 import (
+	"agent-hwan/pkg/types"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +12,13 @@ import (
 	"strings"
 	"time"
 )
+
+// 工具自注册
+func init() {
+	Register("general", func(cfg *types.Config) types.Tool {
+		return NewShortURLTool(cfg.Tools.ShortURL.APIKey, cfg.Tools.ShortURL.BaseURL)
+	})
+}
 
 // 短链接工具常量
 const (

@@ -3,7 +3,6 @@ package prompt
 import (
 	"agent-hwan/internal/config"
 	"agent-hwan/internal/logger"
-	"agent-hwan/internal/tools"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,21 +56,6 @@ func GetPrompts(promptDir string) (map[string]string, error) {
 	}
 
 	return prompts, nil
-}
-
-// GetSystemPrompt 获取通用助手的系统提示词（保留兼容性）
-// 参数：
-//   - prompts: 所有 Prompt 配置
-//   - toolRegistry: 工具注册表，用于动态注入工具信息
-//
-// 返回：
-//   - string: 系统提示词内容
-//   - error: 可能的错误
-func GetSystemPrompt(prompts map[string]string, toolRegistry *tools.ToolRegistry) (string, error) {
-	vars := map[string]any{
-		"TOOLS_SECTION": tools.GenerateToolsSection(toolRegistry),
-	}
-	return GetPromptByScene(prompts, GENERAL_PROMPT, vars)
 }
 
 // GetPromptByScene 根据场景名获取系统提示词

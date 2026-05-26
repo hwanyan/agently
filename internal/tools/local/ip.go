@@ -1,7 +1,9 @@
-package tools
+// 通用智能助手 agent 的工具：IP地址查询工具（本地工具，随项目启动）
+package local
 
 import (
 	"agent-hwan/internal/logger"
+	"agent-hwan/pkg/types"
 	"agent-hwan/pkg/utils"
 	"context"
 	"encoding/json"
@@ -13,6 +15,13 @@ import (
 	"strings"
 	"time"
 )
+
+// 工具自注册
+func init() {
+	Register("general", func(cfg *types.Config) types.Tool {
+		return NewIPTool(cfg.Tools.IP.AccessKey)
+	})
+}
 
 // IP地址查询工具默认配置常量
 const (

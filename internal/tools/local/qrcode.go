@@ -1,6 +1,8 @@
-package tools
+// 通用智能助手 agent 的工具：二维码生成工具（本地工具，随项目启动）
+package local
 
 import (
+	"agent-hwan/pkg/types"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -10,6 +12,13 @@ import (
 
 	"github.com/skip2/go-qrcode"
 )
+
+// 工具自注册
+func init() {
+	Register("general", func(cfg *types.Config) types.Tool {
+		return NewQRCodeTool()
+	})
+}
 
 // QRCodeTool 常量定义
 const (

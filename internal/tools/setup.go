@@ -3,57 +3,37 @@ package tools
 import (
 	"agent-hwan/internal/agent"
 	"agent-hwan/internal/logger"
+	"agent-hwan/internal/tools/local"
 	"agent-hwan/pkg/types"
+	"fmt"
+	"strings"
 )
 
-// SetupTools 设置通用工具（保留兼容性）
-func SetupTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
-	SetupGeneralTools(aiAgent, cfg)
+// GenerateAgentsDescription 生成Agent列表描述（用于路由Agent的Prompt）
+func GenerateAgentsDescription(agents []types.AgentItemConfig) string {
+	var builder strings.Builder
+	for _, ag := range agents {
+		// 跳过系统Agent自身
+		if ag.Role == types.AgentRoleSystem {
+			continue
+		}
+		builder.WriteString(fmt.Sprintf("- **%s** (id: `%s`): %s\n", ag.Name, ag.ID, ag.Description))
+	}
+	return strings.TrimSpace(builder.String())
 }
 
 // SetupGeneralTools 设置通用助手的工具集
-// 包含天气、IP查询、二维码、翻译、文本处理、短链接等工具
+// 通过插件化注册机制自动发现并加载 "general" 工具组的所有工具
 func SetupGeneralTools(aiAgent *agent.BasicAgent, cfg *types.Config) {
 	logger.Info("开始注册通用工具组...")
 
-	// 添加天气工具
-	logger.Info("添加天气工具...")
-	weatherTool := NewWeatherTool(cfg.Tools.Weather.APIKey, cfg.Tools.Weather.BaseURL)
-	aiAgent.AddTool(weatherTool)
-	logger.Info("天气工具已添加")
+	// 通过插件化注册表自动获取该组所有工具
+	tools := local.GetToolsByGroup("general", cfg)
+	for _, tool := range tools {
+		aiAgent.AddTool(tool)
+		logger.Info("工具 [%s] 已注册", tool.Name())
+	}
 
-	// 添加IP查询工具
-	logger.Info("添加IP查询工具...")
-	ipTool := NewIPTool(cfg.Tools.IP.AccessKey)
-	aiAgent.AddTool(ipTool)
-	logger.Info("IP查询工具已添加")
-
-	// 添加二维码生成工具
-	logger.Info("添加二维码生成工具...")
-	qrTool := NewQRCodeTool()
-	aiAgent.AddTool(qrTool)
-	logger.Info("二维码生成工具已添加")
-
-	// 添加翻译工具
-	logger.Info("添加翻译工具...")
-	trTool := NewTranslationTool(cfg.Tools.Translate.APIKey, cfg.Tools.Translate.BaseURL)
-	aiAgent.AddTool(trTool)
-	logger.Info("翻译工具已添加")
-
-	// 添加文本处理工具
-	logger.Info("添加文本处理工具...")
-	textTool := NewTextProcessorTool()
-	aiAgent.AddTool(textTool)
-	logger.Info("文本处理工具已添加")
-
-	// 添加短链接生成工具
-	logger.Info("添加短链接生成工具...")
-	shortURLTool := NewShortURLTool(cfg.Tools.ShortURL.APIKey, cfg.Tools.ShortURL.BaseURL)
-	aiAgent.AddTool(shortURLTool)
-	logger.Info("短链接生成工具已添加")
-
-	// 显示工具统计
-	tools := aiAgent.GetTools()
 	logger.Info("通用工具组注册完成，共 %d 个工具", len(tools))
 }
 

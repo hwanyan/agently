@@ -79,17 +79,18 @@ agent-hwan/
 │   │   ├── session.go                    # 会话数据访问对象（创建、查询、归档）
 │   │   └── message.go                    # 消息数据访问对象（保存、查询、内存转换）
 │   └── tools/
-│       ├── setup.go                      # 工具统一注册（支持通用/MCP分组）
-│       ├── registry.go                   # 工具注册表（生成工具描述供 Prompt 使用）
-│       ├── mcp/                          # MCP工具模块
-│       │   ├── client.go                 # MCP客户端（JSON-RPC通信）
-│       │   └── tool.go                   # MCP工具适配器（适配types.Tool接口）
-│       ├── weather.go                    # 天气查询工具
-│       ├── ip.go                         # IP 查询工具
-│       ├── qrcode.go                     # 二维码生成工具
-│       ├── translation.go                # 翻译工具
-│       ├── textprocessor.go              # 文本处理工具
-│       └── shorturl.go                   # 短链接生成工具
+│       ├── setup.go                      # 工具统一注册 + Agent列表描述生成
+│       ├── local/                        # 本地工具（插件化自注册）
+│       │   ├── register.go               # 工具注册表（全局工厂注册 + 按组发现）
+│       │   ├── weather.go                # 天气查询工具
+│       │   ├── ip.go                     # IP 查询工具
+│       │   ├── qrcode.go                 # 二维码生成工具
+│       │   ├── translation.go            # 翻译工具
+│       │   ├── textprocessor.go          # 文本处理工具
+│       │   └── shorturl.go              # 短链接生成工具
+│       └── mcp/                          # MCP工具模块
+│           ├── client.go                 # MCP客户端（JSON-RPC通信）
+│           └── tool.go                   # MCP工具适配器（适配types.Tool接口）
 ├── pkg/
 │   ├── types/
 │   │   └── types.go                      # 公共类型定义（Message, Tool, Config, User, Session 等）
@@ -402,8 +403,9 @@ scene: "my_agent_prompt"
 name: "我的Agent"
 system_prompt: |
   你是一个专业的...
-  {{TOOLS_SECTION}}
 ```
+
+> **注意**：工具信息无需写入 Prompt，系统通过 OpenAI function calling 机制自动将已注册工具传递给 LLM。
 
 2. 在 `internal/prompt/scene.go` 中添加场景常量：
 
@@ -426,12 +428,29 @@ agents:
 
 5. 更新 `intention_router_prompt.yaml` 中的路由规则，添加新Agent的路由条件。
 
-### 添加新的本地工具
+### 添加新的本地工具（插件化）
 
-1. 在 `internal/tools/` 下创建新文件，实现 `types.Tool` 接口：
+采用 **init() 自注册** 模式，新增工具只需在 `internal/tools/local/` 下创建文件，无需修改其他任何文件：
+
+1. 在 `internal/tools/local/` 下创建新文件，实现 `types.Tool` 接口并通过 `init()` 自注册：
 
 ```go
+package local
+
+import (
+    "agent-hwan/pkg/types"
+    "context"
+)
+
+func init() {
+    Register("general", func(cfg *types.Config) types.Tool {
+        return NewMyTool(cfg.Tools.XXX.APIKey)
+    })
+}
+
 type MyTool struct { /* ... */ }
+
+func NewMyTool(apiKey string) *MyTool { /* ... */ }
 
 func (t *MyTool) Name() string                { return "mytool" }
 func (t *MyTool) Description() string          { return "我的工具描述" }
@@ -441,9 +460,13 @@ func (t *MyTool) Execute(ctx context.Context, args map[string]interface{}) (stri
 }
 ```
 
-2. 在 `internal/tools/setup.go` 的 `SetupGeneralTools` 中注册。
+2. **完成！** 工具会在启动时通过 `init()` 自动注册到全局注册表，`SetupGeneralTools` 会自动发现并加载。
 
-3. 在 `internal/tools/registry.go` 中添加工具描述信息。
+> **工具注册机制说明**：
+> - `local/register.go` 维护全局工具注册表，提供 `Register(group, factory)` 和 `GetToolsByGroup(group, cfg)` 两个核心函数
+> - 每个工具文件通过 `init()` 调用 `Register` 将自己的工厂函数注册到对应的工具组
+> - `setup.go` 中的 `SetupGeneralTools` 调用 `GetToolsByGroup("general", cfg)` 自动获取所有工具并注册到 Agent
+> - 工具信息通过 OpenAI function calling 的 `tools` 参数传递给 LLM，无需在 Prompt 中手动描述
 
 ### 接入MCP工具服务
 

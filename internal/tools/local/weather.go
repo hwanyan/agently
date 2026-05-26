@@ -1,4 +1,5 @@
-package tools
+// 通用智能助手 agent 的工具：天气查询工具（本地工具，随项目启动）
+package local
 
 import (
 	"context"
@@ -10,8 +11,16 @@ import (
 	"time"
 
 	"agent-hwan/internal/logger"
+	"agent-hwan/pkg/types"
 	"agent-hwan/pkg/utils"
 )
+
+// 工具自注册
+func init() {
+	Register("general", func(cfg *types.Config) types.Tool {
+		return NewWeatherTool(cfg.Tools.Weather.APIKey, cfg.Tools.Weather.BaseURL)
+	})
+}
 
 // 天气工具配置常量（定制化内容）
 const (

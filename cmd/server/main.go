@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	// 第一步：加载配置
+	// 加载配置
 	cfg, err := config.LoadConfiguration()
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
@@ -35,43 +35,39 @@ func main() {
 	defer logger.Close()
 	logger.Info("AI Agent系统启动")
 
-	// 第二步：创建LLM客户端
+	// 第一步：创建LLM客户端
 	llmClient := llm.NewOpenAIClient(
 		cfg.LLM.APIKey,
 		cfg.LLM.Model,
 		cfg.LLM.BaseURL,
 	)
-	logger.Info("步骤1、LLM客户端创建成功")
+	logger.Info("【系统步骤-1】LLM客户端创建成功")
 
-	// 第三步：获取全部的 Prompt 配置
+	// 第二步：获取全部的 Prompt 配置
 	prompts, err := prompt.GetPrompts(cfg.Prompt.Dir)
 	if err != nil {
 		log.Fatalf("获取 Prompt 配置失败: %v", err)
 		os.Exit(0)
 	}
-	logger.Info("步骤2、Prompt配置获取成功")
+	logger.Info("【系统步骤-2】Prompt配置获取成功")
 
-	// 第四步：注册工具信息（用于Prompt中的工具描述）
-	toolInfos := tools.NewToolRegistry()
-	logger.Info("步骤3、工具信息注册成功")
-
-	// 第五步：创建Agent管理器并注册全部Agent
-	agentManager := initAllAgents(cfg, llmClient, prompts, toolInfos)
+	// 第三步：创建Agent管理器并注册全部Agent
+	agentManager := initAllAgents(cfg, llmClient, prompts)
 	if err := agentManager.ValidateSystemAgents(); err != nil {
 		log.Fatalf("系统Agent校验失败: %v", err)
 		os.Exit(0)
 	}
-	logger.Info("步骤4、Agent管理器创建成功，全部Agent已注册，系统Agent校验通过")
+	logger.Info("【系统步骤-3】Agent管理器创建成功，全部Agent已注册，系统Agent校验通过")
 
-	// 第五步：为 HTTP 服务创建独立的 Agent 实例
-	httpAgentManager := initAllAgents(cfg, llmClient, prompts, toolInfos)
+	// 第四步：为 HTTP 服务创建独立的 Agent 实例
+	httpAgentManager := initAllAgents(cfg, llmClient, prompts)
 	if err := httpAgentManager.ValidateSystemAgents(); err != nil {
 		log.Fatalf("HTTP Agent管理器系统Agent校验失败: %v", err)
 		os.Exit(0)
 	}
-	logger.Info("步骤5、HTTP Agent管理器创建成功")
+	logger.Info("【系统步骤-4】HTTP Agent管理器创建成功")
 
-	// 第六步：初始化数据库和认证服务
+	// 第五步：初始化数据库和认证服务
 	var db *store.DB
 	var authSvc *auth.Service
 	var userStore *store.UserStore
@@ -92,11 +88,11 @@ func main() {
 	} else {
 		logger.Info("未配置数据库 DSN，跳过数据库初始化")
 	}
-	logger.Info("步骤6、数据库初始化成功")
+	logger.Info("【系统步骤-5】数据库初始化成功")
 
-	// 第七步：启动 HTTP 服务
+	// 启动 HTTP 服务
 	go startHTTPServer(cfg, httpAgentManager, authSvc, sessionStore, messageStore)
-	// 第八步：启动 CLI 交互
+	// 启动 CLI 交互
 	startCLISession(agentManager)
 
 }
@@ -109,22 +105,16 @@ func startCLISession(manager *agent.Manager) {
 }
 
 // initAllAgents 初始化Agent管理器，注册全部Agent
-func initAllAgents(cfg *types.Config, llmClient types.LLMClient, prompts map[string]string, toolInfos *tools.ToolRegistry) *agent.Manager {
+func initAllAgents(cfg *types.Config, llmClient types.LLMClient, prompts map[string]string) *agent.Manager {
 	manager := agent.NewManager(cfg.Agents)
 
 	for _, agentCfg := range cfg.Agents {
 		// 根据工具组确定模板变量
 		vars := make(map[string]any)
 		switch agentCfg.ToolGroup {
-		case "general":
-			vars["TOOLS_SECTION"] = tools.GenerateToolsSection(toolInfos)
-		case "mcp_gold":
-			vars["TOOLS_SECTION"] = tools.GenerateMCPToolsDescription(cfg)
 		case "none":
-			// 系统Agent（如路由Agent）不需要工具描述，但需要Agent列表描述
+			// 系统Agent（如路由Agent）不需要工具，但需要Agent列表描述
 			vars["AGENTS_SECTION"] = tools.GenerateAgentsDescription(cfg.Agents)
-		default:
-			vars["TOOLS_SECTION"] = "暂无可用工具"
 		}
 
 		// 获取对应场景的系统提示词

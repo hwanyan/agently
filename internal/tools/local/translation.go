@@ -1,6 +1,8 @@
-package tools
+// 通用智能助手 agent 的工具：翻译工具（本地工具，随项目启动）
+package local
 
 import (
+	"agent-hwan/pkg/types"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,6 +11,13 @@ import (
 	"strings"
 	"time"
 )
+
+// 工具自注册
+func init() {
+	Register("general", func(cfg *types.Config) types.Tool {
+		return NewTranslationTool(cfg.Tools.Translate.APIKey, cfg.Tools.Translate.BaseURL)
+	})
+}
 
 // 翻译工具常量
 const (
