@@ -1,27 +1,11 @@
 package tools
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/hwanyan/agently/internal/agent"
 	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/tools/local"
 	"github.com/hwanyan/agently/pkg/types"
 )
-
-// GenerateAgentsDescription 生成Agent列表描述（用于路由Agent的Prompt）
-func GenerateAgentsDescription(agents []types.AgentItemConfig) string {
-	var builder strings.Builder
-	for _, ag := range agents {
-		// 跳过系统Agent自身
-		if ag.Role == types.AgentRoleSystem {
-			continue
-		}
-		builder.WriteString(fmt.Sprintf("- **%s** (id: `%s`): %s\n", ag.Name, ag.ID, ag.Description))
-	}
-	return strings.TrimSpace(builder.String())
-}
 
 // SetupGeneralTools 设置通用助手的工具集
 // 通过插件化注册机制自动发现并加载 "general" 工具组的所有工具

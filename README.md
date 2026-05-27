@@ -1,4 +1,4 @@
-# Agent-Hwan
+# Agently
 
 一个基于 Go 实现的多 Agent AI 系统，支持**意图自动路由**、流式对话、自动工具调用、MCP 协议集成、日志系统和灵活的 YAML 配置管理。
 
@@ -45,16 +45,24 @@
 ## 🏗️ 项目结构
 
 ```
-agent-hwan/
+agently/
 ├── cmd/
 │   ├── config/
 │   │   └── config.yaml                  # 统一配置文件（YAML）
 │   └── server/
-│       └── main.go                       # 程序入口（Agent注册、CLI交互、HTTP服务）
+│       └── main.go                       # 程序入口（精简，仅负责启动编排）
 ├── internal/
 │   ├── agent/
-│   │   ├── agent.go                      # Agent 核心（对话循环、工具调用、并发控制）
-│   │   └── manager.go                    # Agent 管理器（注册、切换、意图路由）
+│   │   ├── agent.go                      # Agent 核心引擎（对话循环、工具调用、并发控制）
+│   │   └── manager.go                    # Agent 管理器（切换、意图路由、列表查询）
+│   ├── agents/                           # 🆕 Agent 定义层（统一注册 + 各 Agent 的 Prompt）
+│   │   ├── registry.go                   # Agent 统一编排（初始化、注册、工具绑定、Prompt 加载）
+│   │   ├── general/
+│   │   │   └── prompt.yaml               # 通用工具助手 Prompt（含 name/description/role/tool_group）
+│   │   ├── gold_analysis/
+│   │   │   └── prompt.yaml               # 黄金分析助手 Prompt
+│   │   └── intention_router/
+│   │       └── prompt.yaml               # 意图路由 Agent Prompt
 │   ├── auth/
 │   │   └── auth.go                       # 用户认证服务（注册、登录、JWT 签发与验证）
 │   ├── config/
@@ -67,27 +75,21 @@ agent-hwan/
 │   │   └── logger.go                     # 日志系统（INFO/ERROR/WARNING → 文件）
 │   ├── middleware/
 │   │   └── auth.go                       # JWT 鉴权中间件（提取并验证 Bearer Token）
-│   ├── prompt/
-│   │   ├── prompt.go                     # 提示词加载与模板替换
-│   │   ├── general_prompt.yaml           # 通用工具助手系统提示词
-│   │   ├── gold_analysis_prompt.yaml     # 黄金分析助手系统提示词
-│   │   ├── intention_router_prompt.yaml  # 意图路由Agent系统提示词
-│   │   └── scene.go                      # 场景常量定义
 │   ├── store/
 │   │   ├── db.go                         # 数据库连接池管理
 │   │   ├── user.go                       # 用户数据访问对象（CRUD）
 │   │   ├── session.go                    # 会话数据访问对象（创建、查询、归档）
 │   │   └── message.go                    # 消息数据访问对象（保存、查询、内存转换）
 │   └── tools/
-│       ├── setup.go                      # 工具统一注册 + Agent列表描述生成
+│       ├── setup.go                      # 工具注册辅助函数
 │       ├── local/                        # 本地工具（插件化自注册）
-│       │   ├── register.go               # 工具注册表（全局工厂注册 + 按组发现）
+│       │   ├── registry.go               # 工具注册表（全局工厂注册 + 按组发现）
 │       │   ├── weather.go                # 天气查询工具
 │       │   ├── ip.go                     # IP 查询工具
 │       │   ├── qrcode.go                 # 二维码生成工具
 │       │   ├── translation.go            # 翻译工具
 │       │   ├── textprocessor.go          # 文本处理工具
-│       │   └── shorturl.go              # 短链接生成工具
+│       │   └── shorturl.go               # 短链接生成工具
 │       └── mcp/                          # MCP工具模块
 │           ├── client.go                 # MCP客户端（JSON-RPC通信）
 │           └── tool.go                   # MCP工具适配器（适配types.Tool接口）
@@ -147,9 +149,9 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 log:
   file_path: "../../logs/agent.log"
 
-# Prompt 目录配置
+# Agents 目录配置（约定：agents/<id>/prompt.yaml）
 prompt:
-  dir: "../../internal/prompt"
+  dir: "../../internal/agents"
 
 # HTTP 服务配置
 http:
@@ -175,27 +177,6 @@ llm:
   model: "deepseek-chat"
   base_url: "https://api.deepseek.com/v1"
 
-# 多Agent配置列表（启动时全部注册）
-agents:
-  - id: "intention_router"
-    name: "意图路由助手"
-    description: "自动分析用户意图并路由到合适的专业Agent处理"
-    prompt_scene: "intention_router_prompt"
-    tool_group: "none"
-    role: "system"
-  - id: "general"
-    name: "通用工具助手"
-    description: "提供天气查询、IP查询、翻译、二维码生成等通用工具服务"
-    prompt_scene: "general_prompt"
-    tool_group: "general"
-    role: "business"
-  - id: "gold_analysis"
-    name: "黄金分析助手"
-    description: "提供专业的黄金市场分析、行情查询和投资参考服务"
-    prompt_scene: "gold_analysis_prompt"
-    tool_group: "mcp_gold"
-    role: "business"
-
 # 工具配置
 tools:
   weather:
@@ -215,6 +196,8 @@ mcp:
       api_key: ""
       timeout: 30
 ```
+
+> **注意**：Agent 列表不再需要在 `config.yaml` 中配置。系统启动时会自动扫描 `prompt.dir` 指定目录下的所有子目录，每个包含 `prompt.yaml` 的子目录即为一个 Agent。
 
 ### 5. 运行
 
@@ -396,37 +379,33 @@ sequenceDiagram
 
 ### 添加新Agent
 
-1. 在 `internal/prompt/` 下创建新的 prompt YAML 文件：
+采用 **约定优于配置** 模式，新增 Agent 只需 **1 步**：
+
+1. 在 `internal/agents/` 下创建以 Agent ID 命名的目录，并在其中创建 `prompt.yaml`：
+
+```bash
+mkdir internal/agents/my_agent
+```
 
 ```yaml
-scene: "my_agent_prompt"
+# internal/agents/my_agent/prompt.yaml
 name: "我的Agent"
+description: "Agent功能描述"
+tool_group: "general"   # 工具组：general / mcp_gold / none
+role: "business"        # 角色：system（系统级）/ business（业务级）
+
 system_prompt: |
   你是一个专业的...
 ```
 
-> **注意**：工具信息无需写入 Prompt，系统通过 OpenAI function calling 机制自动将已注册工具传递给 LLM。
+2. **完成！** 系统启动时会自动发现并注册该 Agent。
 
-2. 在 `internal/prompt/scene.go` 中添加场景常量：
-
-```go
-const MY_AGENT_PROMPT = "my_agent_prompt"
-```
-
-3. 在 `config.yaml` 的 `agents` 列表中添加配置：
-
-```yaml
-agents:
-  - id: "my_agent"
-    name: "我的Agent"
-    description: "Agent描述"
-    prompt_scene: "my_agent_prompt"
-    tool_group: "general"  # 或自定义工具组
-```
-
-4. 如需自定义工具组，在 `main.go` 的 `initAllAgents` 中添加对应的工具注册逻辑。
-
-5. 更新 `intention_router_prompt.yaml` 中的路由规则，添加新Agent的路由条件。
+> **约定说明**：
+> - 目录名即为 Agent ID（如 `my_agent`）
+> - `prompt.yaml` 中必须包含 `name`、`description`、`tool_group`、`role`、`system_prompt` 五个字段
+> - 工具信息无需写入 Prompt，系统通过 OpenAI function calling 机制自动将已注册工具传递给 LLM
+> - 路由 Agent（`intention_router`）的 Prompt 中可使用 `{{AGENTS_SECTION}}` 模板变量，系统会自动替换为所有业务 Agent 的列表描述
+> - 无需修改 `config.yaml`、无需修改任何 Go 代码
 
 ### 添加新的本地工具（插件化）
 
@@ -485,7 +464,7 @@ mcp:
       timeout: 30
 ```
 
-3. 在 `agents` 配置中指定 `tool_group: "mcp_gold"`（或自定义工具组）。
+3. 在新 Agent 的 `prompt.yaml` 中指定 `tool_group: "mcp_gold"`（或自定义工具组）。
 
 ### 切换 LLM 提供商
 

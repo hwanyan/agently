@@ -134,27 +134,6 @@ type LLMConfig struct {
 	BaseURL  string `yaml:"base_url"` // API基础URL（可选）
 }
 
-// AgentRole Agent角色类型
-// 用于区分系统级Agent和业务级Agent，不同角色在启动时有不同的容错策略
-type AgentRole string
-
-const (
-	// AgentRoleSystem 系统Agent（如意图路由），启动时必须成功注册，否则服务不启动
-	AgentRoleSystem AgentRole = "system"
-	// AgentRoleBusiness 业务Agent（如通用助手、黄金分析），启动时允许注册失败
-	AgentRoleBusiness AgentRole = "business"
-)
-
-// AgentItemConfig 多Agent配置中的单个Agent配置项
-type AgentItemConfig struct {
-	ID          string    `yaml:"id"`           // Agent唯一标识（如 general, gold_analysis）
-	Name        string    `yaml:"name"`         // Agent显示名称
-	Description string    `yaml:"description"`  // Agent描述
-	PromptScene string    `yaml:"prompt_scene"` // 对应的 Prompt 场景名
-	ToolGroup   string    `yaml:"tool_group"`   // 工具组标识（如 general, mcp_gold, none）
-	Role        AgentRole `yaml:"role"`         // Agent角色：system（系统级）或 business（业务级）
-}
-
 // MCPServerConfig MCP服务器配置
 type MCPServerConfig struct {
 	Name    string `yaml:"name"`     // MCP服务名称
@@ -210,22 +189,21 @@ type LogConfig struct {
 	FilePath string `yaml:"file_path"` // 日志文件路径
 }
 
-// PromptDirConfig Prompt目录配置
+// PromptDirConfig Agents 目录配置（约定：agents/<id>/prompt.yaml）
 type PromptDirConfig struct {
-	Dir string `yaml:"dir"` // Prompt文件所在目录
+	Dir string `yaml:"dir"` // agents 目录路径，其中每个子目录对应一个 Agent
 }
 
 // Config 应用程序总配置
 type Config struct {
-	Log      LogConfig         `yaml:"log"`      // 日志配置
-	HTTP     HTTPConfig        `yaml:"http"`     // HTTP服务配置
-	Database DatabaseConfig    `yaml:"database"` // 数据库配置
-	JWT      JWTConfig         `yaml:"jwt"`      // JWT 配置
-	Prompt   PromptDirConfig   `yaml:"prompt"`   // Prompt目录配置
-	LLM      LLMConfig         `yaml:"llm"`      // LLM配置
-	Agents   []AgentItemConfig `yaml:"agents"`   // 多Agent配置列表
-	Tools    ToolsConfig       `yaml:"tools"`    // 工具配置
-	MCP      MCPConfig         `yaml:"mcp"`      // MCP工具配置
+	Log      LogConfig       `yaml:"log"`      // 日志配置
+	HTTP     HTTPConfig      `yaml:"http"`     // HTTP服务配置
+	Database DatabaseConfig  `yaml:"database"` // 数据库配置
+	JWT      JWTConfig       `yaml:"jwt"`      // JWT 配置
+	Prompt   PromptDirConfig `yaml:"prompt"`   // Agents 目录配置
+	LLM      LLMConfig       `yaml:"llm"`      // LLM配置
+	Tools    ToolsConfig     `yaml:"tools"`    // 工具配置
+	MCP      MCPConfig       `yaml:"mcp"`      // MCP工具配置
 }
 
 // ToolParameter 工具参数定义

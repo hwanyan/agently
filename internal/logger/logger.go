@@ -64,9 +64,9 @@ func openDailyLogFile() error {
 	}
 
 	// 初始化各级别的 logger
-	infoLogger = log.New(currentLogFile, "[INFO] ", log.Ldate|log.Ltime|log.Lshortfile)
-	errorLogger = log.New(currentLogFile, "[ERROR] ", log.Ldate|log.Ltime|log.Lshortfile)
-	warningLogger = log.New(currentLogFile, "[WARNING] ", log.Ldate|log.Ltime|log.Lshortfile)
+	infoLogger = log.New(currentLogFile, "["+LevelInfo+"] ", log.Ldate|log.Ltime|log.Lshortfile)
+	errorLogger = log.New(currentLogFile, "["+LevelError+"] ", log.Ldate|log.Ltime|log.Lshortfile)
+	warningLogger = log.New(currentLogFile, "["+LevelWarning+"] ", log.Ldate|log.Ltime|log.Lshortfile)
 
 	// 记录日志系统启动信息
 	Info("日志系统初始化成功，日志文件: %s", logPath)

@@ -1,7 +1,8 @@
-# 黄金分析助手场景配置
-# 场景：专业黄金市场分析
-scene: "gold_analysis_prompt"
+# 黄金分析助手 Prompt
 name: "黄金分析助手"
+description: "提供专业的黄金市场分析、行情查询和投资参考服务"
+tool_group: "mcp_gold"
+role: "business"
 
 system_prompt: |
   你是一个专业的黄金市场分析助手，具有以下特点和能力：

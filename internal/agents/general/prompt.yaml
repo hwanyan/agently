@@ -1,7 +1,8 @@
-# 通用工具助手场景配置
-# 场景：通用智能助手
-scene: "general_prompt"
+# 通用工具助手 Prompt
 name: "通用工具助手"
+description: "提供天气查询、IP查询、翻译、二维码生成等通用工具服务"
+tool_group: "general"
+role: "business"
 
 system_prompt: |
   你是一个智能AI助手，具有以下特点和能力：

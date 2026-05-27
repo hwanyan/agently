@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/hwanyan/agently/internal/logger"
-	"github.com/hwanyan/agently/pkg/types"
 	"strings"
 	"sync"
+
+	"github.com/hwanyan/agently/internal/logger"
 )
 
 // Manager Agent管理器
@@ -17,18 +17,18 @@ import (
 //   - system: 系统级Agent（如意图路由），启动时必须成功注册，否则服务不启动
 //   - business: 业务级Agent（如通用助手、黄金分析），允许注册失败（如依赖服务不可用）
 type Manager struct {
-	agents       map[string]*BasicAgent  // Agent实例映射表（key为Agent ID）
-	agentConfigs []types.AgentItemConfig // Agent配置列表
-	currentID    string                  // 当前激活的Agent ID（默认为第一个业务Agent）
-	routerID     string                  // 路由Agent的ID（自动从 role=system 的Agent中识别）
-	mutex        sync.RWMutex            // 读写锁
+	agents     map[string]*BasicAgent // Agent实例映射表（key为Agent ID）
+	agentsInfo map[string]AgentInfo   // Agent信息映射表（key为Agent ID）
+	currentID  string                 // 当前激活的Agent ID（默认为第一个业务Agent）
+	routerID   string                 // 路由Agent的ID（自动从 role=system 的Agent中识别）
+	mutex      sync.RWMutex           // 读写锁
 }
 
-// NewManager 创建Agent管理器
-func NewManager(configs []types.AgentItemConfig) *Manager {
+// NewManager 创建 Agent 管理器
+func NewManager() *Manager {
 	return &Manager{
-		agents:       make(map[string]*BasicAgent),
-		agentConfigs: configs,
+		agents:     make(map[string]*BasicAgent),
+		agentsInfo: map[string]AgentInfo{},
 	}
 }
 
@@ -40,19 +40,22 @@ func NewManager(configs []types.AgentItemConfig) *Manager {
 // 参数：
 //   - id: Agent唯一标识
 //   - agentInstance: Agent实例
-func (m *Manager) Register(id string, agentRole types.AgentRole, agentInstance *BasicAgent) {
+func (m *Manager) Register(agentInstance *BasicAgent, agentInfo *AgentInfo) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.agents[id] = agentInstance
-	logger.Info("Agent [%s] 已注册到管理器", id)
+	agentInfo.Registered = true
+	m.agents[agentInfo.ID] = agentInstance
+	logger.Info("Agent [%s] 已注册到管理器", agentInfo.ID)
 
-	if agentRole == types.AgentRoleSystem {
-		m.routerID = id
-		logger.Info("系统Agent [%s] 已自动设置为路由器", id)
-	} else if agentRole == types.AgentRoleBusiness && m.currentID == "" {
-		m.currentID = id
-		logger.Info("业务Agent [%s] 已设为默认激活Agent", id)
+	if agentInfo.Role == AgentRoleSystem {
+		agentInfo.IsActive = true
+		m.routerID = agentInfo.ID
+		logger.Info("系统Agent [%s] 已自动设置为路由器", agentInfo.ID)
+	} else if agentInfo.Role == AgentRoleBusiness && m.currentID == "" {
+		agentInfo.IsActive = true
+		m.currentID = agentInfo.ID
+		logger.Info("业务Agent [%s] 已设为默认激活Agent", agentInfo.ID)
 	}
 }
 
@@ -64,10 +67,10 @@ func (m *Manager) ValidateSystemAgents() error {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	for _, cfg := range m.agentConfigs {
-		if cfg.Role == types.AgentRoleSystem {
-			if _, exists := m.agents[cfg.ID]; !exists {
-				return fmt.Errorf("系统Agent [%s] (%s) 未成功注册，服务无法启动", cfg.ID, cfg.Name)
+	for _, agent := range m.agentsInfo {
+		if agent.Role == AgentRoleSystem {
+			if _, exists := m.agents[agent.ID]; !exists {
+				return fmt.Errorf("系统Agent [%s] (%s) 未成功注册，服务无法启动", agent.ID, agent.Name)
 			}
 		}
 	}
@@ -134,9 +137,9 @@ func (m *Manager) IsSystemAgent(id string) bool {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	for _, cfg := range m.agentConfigs {
-		if cfg.ID == id {
-			return cfg.Role == types.AgentRoleSystem
+	for _, agent := range m.agentsInfo {
+		if agent.ID == id {
+			return agent.Role == AgentRoleSystem
 		}
 	}
 	return false
@@ -225,17 +228,17 @@ func (m *Manager) List() []AgentInfo {
 	defer m.mutex.RUnlock()
 
 	var list []AgentInfo
-	for _, cfg := range m.agentConfigs {
+	for _, agent := range m.agentsInfo {
 		// 跳过系统Agent，不在列表中展示
-		if cfg.Role == types.AgentRoleSystem {
+		if agent.Role == AgentRoleSystem {
 			continue
 		}
-		_, registered := m.agents[cfg.ID]
+		_, registered := m.agents[agent.ID]
 		list = append(list, AgentInfo{
-			ID:          cfg.ID,
-			Name:        cfg.Name,
-			Description: cfg.Description,
-			IsActive:    cfg.ID == m.currentID,
+			ID:          agent.ID,
+			Name:        agent.Name,
+			Description: agent.Description,
+			IsActive:    agent.ID == m.currentID,
 			Registered:  registered,
 		})
 	}
@@ -250,26 +253,38 @@ func (m *Manager) ListAll() []AgentInfo {
 	defer m.mutex.RUnlock()
 
 	var list []AgentInfo
-	for _, cfg := range m.agentConfigs {
-		_, registered := m.agents[cfg.ID]
+	for _, agent := range m.agentsInfo {
+		_, registered := m.agents[agent.ID]
 		list = append(list, AgentInfo{
-			ID:          cfg.ID,
-			Name:        cfg.Name,
-			Description: cfg.Description,
-			IsActive:    cfg.ID == m.currentID,
+			ID:          agent.ID,
+			Name:        agent.Name,
+			Description: agent.Description,
+			IsActive:    agent.ID == m.currentID,
 			Registered:  registered,
-			IsSystem:    cfg.Role == types.AgentRoleSystem,
 		})
 	}
 	return list
 }
 
+// AgentRole Agent角色类型
+// 用于区分系统级Agent和业务级Agent，不同角色在启动时有不同的容错策略
+type AgentRole string
+
+const (
+	// AgentRoleSystem 系统Agent（如意图路由），启动时必须成功注册，否则服务不启动
+	AgentRoleSystem AgentRole = "system"
+	// AgentRoleBusiness 业务Agent（如通用助手、黄金分析），启动时允许注册失败
+	AgentRoleBusiness AgentRole = "business"
+)
+
 // AgentInfo Agent信息（用于展示）
 type AgentInfo struct {
-	ID          string // Agent唯一标识
-	Name        string // Agent显示名称
-	Description string // Agent描述
-	IsActive    bool   // 是否为当前激活的Agent
-	Registered  bool   // 是否已注册
-	IsSystem    bool   // 是否为系统Agent
+	ID          string    // Agent唯一标识
+	Name        string    // Agent显示名称
+	Description string    // Agent描述
+	ToolGroup   string    // 工具组标识（如 general, mcp_gold, none）
+	Prompt      string    // Agent提示词
+	Role        AgentRole // Agent角色：system（系统级）或 business（业务级）
+	IsActive    bool      // 是否为当前激活的Agent
+	Registered  bool      // 是否已注册
 }

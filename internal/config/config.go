@@ -23,13 +23,6 @@ type PromptConfig struct {
 	} `yaml:"settings"`
 }
 
-// ToolInfo 工具信息结构
-type ToolInfo struct {
-	Name        string
-	Description string
-	Examples    []string
-}
-
 // LoadConfiguration 加载整个项目所需的配置
 // 说明：
 //   - 首先尝试从配置文件加载，如果配置文件存在则使用
@@ -45,11 +38,10 @@ func LoadConfiguration() (*types.Config, error) {
 	// 读取配置文件
 	if _, err := os.Stat(configPath); err == nil {
 		// 加载配置文件并验证
-		cfg, err := loadConfigFromFile(configPath)
-		if err == nil {
+		cfg, e := loadConfigFromFile(configPath)
+		if e == nil {
 			return cfg, nil
 		}
-	} else {
 	}
 
 	// 从环境变量加载
@@ -81,13 +73,13 @@ func loadConfigFromFile(configPath string) (*types.Config, error) {
 
 	// 解析YAML配置
 	var config types.Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	if e := yaml.Unmarshal(data, &config); e != nil {
+		return nil, fmt.Errorf("解析配置文件失败: %w", e)
 	}
 
 	// 验证配置
-	if err := validateConfig(&config); err != nil {
-		return nil, fmt.Errorf("配置验证失败: %w", err)
+	if e := validateConfig(&config); e != nil {
+		return nil, fmt.Errorf("配置验证失败: %w", e)
 	}
 
 	return &config, nil
@@ -107,7 +99,7 @@ func loadConfigFromEnv() (*types.Config, error) {
 			FilePath: getEnvOrDefault("LOG_FILE_PATH", "logs/agent.log"),
 		},
 		Prompt: types.PromptDirConfig{
-			Dir: getEnvOrDefault("PROMPT_DIR", "../../internal/prompt"),
+			Dir: getEnvOrDefault("PROMPT_DIR", "../../internal/agents"),
 		},
 		LLM: types.LLMConfig{
 			Provider: getEnvOrDefault("LLM_PROVIDER", "openai"),
@@ -155,30 +147,6 @@ func validateConfig(config *types.Config) error {
 
 	if config.LLM.Model == "" {
 		return fmt.Errorf("LLM模型不能为空")
-	}
-
-	// 验证Agents配置
-	if len(config.Agents) == 0 {
-		return fmt.Errorf("Agents配置列表不能为空，至少需要配置一个Agent")
-	}
-
-	// 验证每个Agent配置项
-	for _, ag := range config.Agents {
-		if ag.ID == "" {
-			return fmt.Errorf("Agent配置中存在id为空的项")
-		}
-		if ag.Name == "" {
-			return fmt.Errorf("Agent [%s] 的name不能为空", ag.ID)
-		}
-		if ag.PromptScene == "" {
-			return fmt.Errorf("Agent [%s] 的prompt_scene不能为空", ag.ID)
-		}
-		if ag.Role == "" {
-			return fmt.Errorf("Agent [%s] 的role不能为空，必须为 system 或 business", ag.ID)
-		}
-		if ag.Role != types.AgentRoleSystem && ag.Role != types.AgentRoleBusiness {
-			return fmt.Errorf("Agent [%s] 的role值 [%s] 无效，必须为 system 或 business", ag.ID, ag.Role)
-		}
 	}
 
 	// 验证天气工具配置

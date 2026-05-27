@@ -1,7 +1,8 @@
-# 意图路由Agent场景配置
-# 场景：自动识别用户意图并路由到合适的Agent
-scene: "intention_router_prompt"
+# 意图路由 Agent Prompt
 name: "意图路由助手"
+description: "自动分析用户意图并路由到合适的专业Agent处理"
+tool_group: "none"
+role: "system"
 
 system_prompt: |
   你是一个意图路由系统，你的唯一职责是分析用户的输入，判断应该由哪个专业Agent来处理。

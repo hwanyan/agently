@@ -55,9 +55,9 @@ func New(cfg types.DatabaseConfig) (*DB, error) {
 	db.SetConnMaxLifetime(time.Duration(maxLifetime) * time.Second)
 
 	// 验证连接是否可用
-	if err := db.Ping(); err != nil {
+	if e := db.Ping(); e != nil {
 		db.Close()
-		return nil, fmt.Errorf("数据库连接测试失败: %w", err)
+		return nil, fmt.Errorf("数据库连接测试失败: %w", e)
 	}
 
 	return &DB{db}, nil
