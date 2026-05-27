@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"agent-hwan/internal/store"
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/internal/store"
+	"github.com/hwanyan/agently/pkg/types"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"

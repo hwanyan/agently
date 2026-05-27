@@ -1,12 +1,13 @@
 package tools
 
 import (
-	"agent-hwan/internal/agent"
-	"agent-hwan/internal/logger"
-	"agent-hwan/internal/tools/local"
-	"agent-hwan/pkg/types"
 	"fmt"
 	"strings"
+
+	"github.com/hwanyan/agently/internal/agent"
+	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/internal/tools/local"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // GenerateAgentsDescription 生成Agent列表描述（用于路由Agent的Prompt）

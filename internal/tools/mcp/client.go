@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"time"
 
-	"agent-hwan/internal/logger"
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // Client MCP客户端

@@ -2,11 +2,11 @@
 package agent
 
 import (
-	"agent-hwan/internal/logger"
-	"agent-hwan/pkg/types"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/pkg/types"
 	"strings"
 	"sync"
 )

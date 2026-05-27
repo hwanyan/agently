@@ -1,4 +1,4 @@
-module agent-hwan
+module github.com/hwanyan/agently
 
 go 1.25.0
 

@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"agent-hwan/internal/agent"
-	"agent-hwan/internal/auth"
-	"agent-hwan/internal/logger"
-	"agent-hwan/internal/middleware"
-	"agent-hwan/internal/store"
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/internal/agent"
+	"github.com/hwanyan/agently/internal/auth"
+	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/internal/middleware"
+	"github.com/hwanyan/agently/internal/store"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // HTTPService HTTP服务

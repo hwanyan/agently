@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"agent-hwan/internal/logger"
+	"github.com/hwanyan/agently/internal/logger"
 )
 
 // MCPTool MCP工具适配器

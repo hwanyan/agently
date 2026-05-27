@@ -3,7 +3,7 @@
 package local
 
 import (
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // ToolFactory 工具工厂函数类型

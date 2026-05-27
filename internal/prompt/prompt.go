@@ -1,9 +1,9 @@
 package prompt
 
 import (
-	"agent-hwan/internal/config"
-	"agent-hwan/internal/logger"
 	"fmt"
+	"github.com/hwanyan/agently/internal/config"
+	"github.com/hwanyan/agently/internal/logger"
 	"os"
 	"path/filepath"
 	"regexp"

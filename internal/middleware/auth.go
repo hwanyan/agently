@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"agent-hwan/internal/auth"
+	"github.com/hwanyan/agently/internal/auth"
 )
 
 // contextKey 上下文键类型，避免与其他包的键冲突

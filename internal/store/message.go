@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // MessageStore 消息数据访问对象

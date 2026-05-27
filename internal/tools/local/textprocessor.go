@@ -2,11 +2,11 @@
 package local
 
 import (
-	"agent-hwan/pkg/types"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/hwanyan/agently/pkg/types"
 	"regexp"
 	"strings"
 	"time"

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"agent-hwan/internal/agent"
-	"agent-hwan/internal/logger"
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/internal/agent"
+	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/pkg/types"
 
 	"github.com/chzyer/readline"
 )

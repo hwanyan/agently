@@ -2,16 +2,16 @@
 package agent
 
 import (
-	"agent-hwan/internal/logger"
-	"agent-hwan/pkg/utils"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/pkg/utils"
 	"strings"
 	"sync"
 	"time"
 
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // BasicAgent 基础AI Agent实现

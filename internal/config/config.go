@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/pkg/types"
 
 	"gopkg.in/yaml.v2"
 )

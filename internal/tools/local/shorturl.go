@@ -2,10 +2,10 @@
 package local
 
 import (
-	"agent-hwan/pkg/types"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/hwanyan/agently/pkg/types"
 	"io"
 	"net/http"
 	"net/url"

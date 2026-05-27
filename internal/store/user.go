@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // UserStore 用户数据访问对象

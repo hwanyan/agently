@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"agent-hwan/internal/logger"
-	"agent-hwan/pkg/types"
-	"agent-hwan/pkg/utils"
+	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/pkg/types"
+	"github.com/hwanyan/agently/pkg/utils"
 )
 
 // 工具自注册

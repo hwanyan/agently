@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"agent-hwan/pkg/types"
-	"agent-hwan/pkg/utils"
+	"github.com/hwanyan/agently/pkg/types"
+	"github.com/hwanyan/agently/pkg/utils"
 )
 
 // OpenAIClient OpenAI客户端

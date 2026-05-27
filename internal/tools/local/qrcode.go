@@ -2,11 +2,11 @@
 package local
 
 import (
-	"agent-hwan/pkg/types"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/hwanyan/agently/pkg/types"
 	"os"
 	"strings"
 

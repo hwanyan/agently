@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/pkg/types"
 
 	_ "github.com/lib/pq" // PostgreSQL 驱动
 )

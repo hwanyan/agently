@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"agent-hwan/pkg/types"
+	"github.com/hwanyan/agently/pkg/types"
 )
 
 // SessionStore 会话数据访问对象
