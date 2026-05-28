@@ -69,8 +69,8 @@ type CallToolResponse struct {
 
 // ContentBlock MCP响应内容块
 type ContentBlock struct {
-	Type string `json:"type"` // 内容类型（text, image, resource等）
-	Text string `json:"text"` // 文本内容
+	Type    string `json:"type"`    // 内容类型（text, image, resource等）
+	Content string `json:"content"` // 内容
 }
 
 // ListToolsResponse MCP列出工具响应
@@ -100,8 +100,8 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolDefinition, error) {
 	var result struct {
 		Result ListToolsResponse `json:"result"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("解析MCP工具列表响应失败: %w", err)
+	if e := json.Unmarshal(respBody, &result); e != nil {
+		return nil, fmt.Errorf("解析MCP工具列表响应失败: %w", e)
 	}
 
 	logger.Info("从MCP服务器 [%s] 获取到 %d 个工具", c.serverName, len(result.Result.Tools))
@@ -139,8 +139,8 @@ func (c *Client) CallTool(ctx context.Context, toolName string, arguments map[st
 	var result struct {
 		Result CallToolResponse `json:"result"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", fmt.Errorf("解析MCP工具响应失败: %w", err)
+	if e := json.Unmarshal(respBody, &result); e != nil {
+		return "", fmt.Errorf("解析MCP工具响应失败: %w", e)
 	}
 
 	if result.Result.IsError {
@@ -148,7 +148,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, arguments map[st
 		var errMsg string
 		for _, block := range result.Result.Content {
 			if block.Type == "text" {
-				errMsg += block.Text
+				errMsg += block.Content
 			}
 		}
 		return "", fmt.Errorf("MCP工具执行错误: %s", errMsg)
@@ -158,7 +158,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, arguments map[st
 	var resultText string
 	for _, block := range result.Result.Content {
 		if block.Type == "text" {
-			resultText += block.Text
+			resultText += block.Content
 		}
 	}
 

@@ -3,7 +3,6 @@
 package agents
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"github.com/hwanyan/agently/internal/llm"
 	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/tools"
-	"github.com/hwanyan/agently/internal/tools/mcp"
 	"github.com/hwanyan/agently/pkg/types"
 )
 
@@ -155,33 +153,12 @@ func registerTools(aiAgent *agent.BasicAgent, toolGroup string, cfg *types.Confi
 	case "general":
 		tools.SetupGeneralTools(aiAgent, cfg)
 	case "mcp_gold":
-		setupMCPToolsForAgent(aiAgent, cfg)
+		// 为 agent 设置 MCP 工具时需要将 toolGroup 参数设置为在配置文件中指定 MCP 服务的 name
+		tools.SetupMCPTools(aiAgent, cfg, "gold-analysis-server")
 	case "none":
 		// 系统Agent不需要工具
 	default:
 		logger.Warning("未知的工具组 [%s]，跳过工具注册", toolGroup)
-	}
-}
-
-// setupMCPToolsForAgent 为Agent设置MCP工具
-func setupMCPToolsForAgent(aiAgent *agent.BasicAgent, cfg *types.Config) {
-	if len(cfg.MCP.Servers) == 0 {
-		return
-	}
-
-	for _, serverCfg := range cfg.MCP.Servers {
-		client := mcp.NewClient(serverCfg)
-		mcpTools, err := mcp.DiscoverAndCreateTools(context.Background(), client)
-		if err != nil {
-			logger.Warning("MCP服务 [%s] 工具发现失败: %v", serverCfg.Name, err)
-			continue
-		}
-
-		var toolInterfaces []types.Tool
-		for _, t := range mcpTools {
-			toolInterfaces = append(toolInterfaces, t)
-		}
-		tools.SetupMCPTools(aiAgent, toolInterfaces)
 	}
 }
 

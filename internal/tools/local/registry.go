@@ -16,7 +16,7 @@ type toolEntry struct {
 	factory ToolFactory // 工厂函数
 }
 
-// 全局工具注册表
+// 全局工具注册表（所有的本地工具通过 init 函数在项目启动时自注册）
 var globalRegistry []toolEntry
 
 // Register 注册工具工厂到全局注册表
