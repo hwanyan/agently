@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -42,6 +43,7 @@ func LoadConfiguration() (*types.Config, error) {
 		if e == nil {
 			return cfg, nil
 		}
+		log.Printf("加载配置文件失败：%v\n", e)
 	}
 
 	// 从环境变量加载

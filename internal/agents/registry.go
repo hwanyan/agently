@@ -154,7 +154,7 @@ func registerTools(aiAgent *agent.BasicAgent, toolGroup string, cfg *types.Confi
 		tools.SetupGeneralTools(aiAgent, cfg)
 	case "mcp_gold":
 		// 为 agent 设置 MCP 工具时需要将 toolGroup 参数设置为在配置文件中指定 MCP 服务的 name
-		tools.SetupMCPTools(aiAgent, cfg, "gold-analysis-server")
+		tools.SetupMCPTools(aiAgent, cfg, "gold-analysis-mcp-server")
 	case "none":
 		// 系统Agent不需要工具
 	default:
