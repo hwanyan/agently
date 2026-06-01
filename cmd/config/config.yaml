@@ -1,0 +1,66 @@
+
+# ============================================================
+# Agently 应用配置文件
+# ============================================================
+
+# 日志配置
+log:
+  file_path: "logs/agent.log"
+
+# HTTP 服务配置
+http:
+  port: 8080
+  host: "0.0.0.0"
+
+# 数据库配置（PostgreSQL）
+database:
+  dsn: "postgres://user:password@localhost:5432/agently?sslmode=disable"  # 请修改为实际的数据库连接信息
+  max_open_conns: 20
+  max_idle_conns: 5
+  conn_max_lifetime: 300
+
+# JWT 认证配置
+jwt:
+  secret: ""          # TODO: 请填写 JWT 签名密钥（生产环境必须设置强随机值）
+  expire_hour: 72
+
+# Agents 提示词目录配置
+prompt:
+  dir: "../../internal/agents"
+
+# LLM 大语言模型配置
+llm:
+  provider: "openai"
+  api_key: ""         # TODO: 请填写 LLM API 密钥
+  model: ""           # TODO: 请填写模型名称，如 gpt-4、deepseek-chat 等
+  base_url: ""        # TODO: 请填写 API 基础 URL（如使用第三方代理需配置）
+
+# 工具配置
+tools:
+  # 天气工具（和风天气）
+  weather:
+    api_key: ""       # TODO: 请填写和风天气 API 密钥
+    base_url: "https://devapi.qweather.com"
+
+  # IP 地址查询工具
+  ip:
+    access_key: ""    # TODO: 请填写 IP 查询 access key
+
+  # 翻译工具
+  translate:
+    api_key: ""       # TODO: 请填写翻译 API 密钥
+    base_url: "https://libretranslate.com"
+
+  # 短链接工具
+  short_url:
+    api_key: ""       # TODO: 请填写短链接 API 密钥（可选）
+    base_url: ""      # TODO: 请填写短链接 API 基础 URL
+
+# MCP 工具配置
+mcp:
+  servers: []
+  # 示例：
+  # - name: "example-mcp-server"
+  #   base_url: "http://localhost:9000"
+  #   api_key: ""
+  #   timeout: 30
