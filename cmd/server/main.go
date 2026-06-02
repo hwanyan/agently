@@ -14,6 +14,8 @@ import (
 	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/store"
 	"github.com/hwanyan/agently/pkg/types"
+
+	"golang.org/x/term"
 )
 
 func main() {
@@ -23,18 +25,23 @@ func main() {
 	// 初始化日志系统
 	initLogger(cfg)
 
-	// 注册全部的 agent
-	cliAgentManager := agents.InitAgents(cfg)
-	httpAgentManager := agents.InitAgents(cfg)
-
 	// 初始化数据库和认证服务
 	authSvc, sessionStore, messageStore := initDatabase(cfg)
 
-	// 启动 HTTP 服务
-	go startHTTPServer(cfg, httpAgentManager, authSvc, sessionStore, messageStore)
+	// 判断是否有终端（tty），决定运行模式
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		// 有终端：开发模式，启动 CLI + HTTP
+		cliAgentManager := agents.InitAgents(cfg)
+		httpAgentManager := agents.InitAgents(cfg)
 
-	// 启动 CLI 交互
-	startCLISession(cliAgentManager)
+		go startHTTPServer(cfg, httpAgentManager, authSvc, sessionStore, messageStore)
+		startCLISession(cliAgentManager)
+	} else {
+		// 无终端：服务器模式，仅启动 HTTP 服务（阻塞）
+		logger.Info("检测到无终端环境，以服务模式启动（仅HTTP）")
+		httpAgentManager := agents.InitAgents(cfg)
+		startHTTPServer(cfg, httpAgentManager, authSvc, sessionStore, messageStore)
+	}
 }
 
 // initConfig 加载配置
