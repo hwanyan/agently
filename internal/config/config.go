@@ -3,7 +3,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -26,32 +25,18 @@ type PromptConfig struct {
 
 // LoadConfiguration 加载整个项目所需的配置
 // 说明：
-//   - 首先尝试从配置文件加载，如果配置文件存在则使用
-//   - 如果配置文件不存在，则从环境变量加载
+//   - 从配置文件加载配置
 //   - 加载配置后，会进行验证，如果验证失败，则会返回错误
 //
 // 返回：
 //   - *types.Config: 加载的配置
 //   - error: 可能的错误
 func LoadConfiguration() (*types.Config, error) {
-	// 首先尝试从配置文件加载
 	configPath := "../config/config.yaml"
-	// 读取配置文件
-	if _, err := os.Stat(configPath); err == nil {
-		// 加载配置文件并验证
-		cfg, e := loadConfigFromFile(configPath)
-		if e == nil {
-			return cfg, nil
-		}
-		log.Printf("加载配置文件失败：%v\n", e)
-	}
-
-	// 从环境变量加载
-	cfg, err := loadConfigFromEnv()
+	cfg, err := loadConfigFromFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("从环境变量加载配置失败: %w", err)
+		return nil, fmt.Errorf("加载配置文件失败: %w", err)
 	}
-
 	return cfg, nil
 }
 
@@ -87,55 +72,6 @@ func loadConfigFromFile(configPath string) (*types.Config, error) {
 	return &config, nil
 }
 
-// loadConfigFromEnv 从环境变量加载配置
-// 说明：
-//
-//   - 加载配置后，会进行验证，如果验证失败，则会返回错误
-//
-// 返回：
-//   - *types.Config: 加载的配置
-//   - error: 可能的错误
-func loadConfigFromEnv() (*types.Config, error) {
-	config := &types.Config{
-		Log: types.LogConfig{
-			FilePath: getEnvOrDefault("LOG_FILE_PATH", "logs/agent.log"),
-		},
-		Prompt: types.PromptDirConfig{
-			Dir: getEnvOrDefault("PROMPT_DIR", "../../internal/agents"),
-		},
-		LLM: types.LLMConfig{
-			Provider: getEnvOrDefault("LLM_PROVIDER", "openai"),
-			APIKey:   os.Getenv("LLM_API_KEY"),
-			Model:    os.Getenv("LLM_MODEL"),
-			BaseURL:  os.Getenv("LLM_BASE_URL"),
-		},
-		Tools: types.ToolsConfig{
-			Weather: types.WeatherConfig{
-				APIKey:  os.Getenv("WEATHER_API_KEY"),
-				BaseURL: os.Getenv("WEATHER_BASE_URL"),
-			},
-			IP: types.IPToolConfig{
-				AccessKey: os.Getenv("IPAPI_ACCESS_KEY"),
-			},
-			Translate: types.TranslateConfig{
-				APIKey:  os.Getenv("TRANSLATE_API_KEY"),
-				BaseURL: getEnvOrDefault("TRANSLATE_BASE_URL", "https://libretranslate.com"),
-			},
-			ShortURL: types.ShortURLConfig{
-				APIKey:  os.Getenv("SHORTURL_API_KEY"),
-				BaseURL: os.Getenv("SHORTURL_BASE_URL"),
-			},
-		},
-	}
-
-	// 验证配置
-	if err := validateConfig(config); err != nil {
-		return nil, fmt.Errorf("配置验证失败: %w", err)
-	}
-
-	return config, nil
-}
-
 // validateConfig 验证配置的有效性
 func validateConfig(config *types.Config) error {
 	// 验证LLM配置
@@ -165,12 +101,4 @@ func validateConfig(config *types.Config) error {
 	}
 
 	return nil
-}
-
-// getEnvOrDefault 获取环境变量或返回默认值
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

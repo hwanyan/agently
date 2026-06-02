@@ -1,11 +1,10 @@
-
 # ============================================================
 # Agently 应用配置文件
 # ============================================================
 
 # 日志配置
 log:
-  file_path: "logs/agent.log"
+  file_path: "../../logs/agently" # 日志文件的路径和前缀
 
 # HTTP 服务配置
 http:
@@ -14,14 +13,14 @@ http:
 
 # 数据库配置（PostgreSQL）
 database:
-  dsn: "postgres://user:password@localhost:5432/agently?sslmode=disable"  # 请修改为实际的数据库连接信息
+  dsn: "postgres://agently:*******@localhost:5432/agentlydb?sslmode=disable"  # 请修改为实际的数据库连接信息
   max_open_conns: 20
   max_idle_conns: 5
   conn_max_lifetime: 300
 
 # JWT 认证配置
 jwt:
-  secret: ""          # TODO: 请填写 JWT 签名密钥（生产环境必须设置强随机值）
+  secret: "*******"          # TODO: 请填写 JWT 签名密钥（生产环境必须设置强随机值）
   expire_hour: 72
 
 # Agents 提示词目录配置
@@ -30,37 +29,31 @@ prompt:
 
 # LLM 大语言模型配置
 llm:
-  provider: "openai"
-  api_key: ""         # TODO: 请填写 LLM API 密钥
-  model: ""           # TODO: 请填写模型名称，如 gpt-4、deepseek-chat 等
-  base_url: ""        # TODO: 请填写 API 基础 URL（如使用第三方代理需配置）
+  provider: "deepseek"
+  api_key: "*******"
+  model: "deepseek-chat"
+  base_url: "https://api.deepseek.com/v1"
 
 # 工具配置
 tools:
   # 天气工具（和风天气）
   weather:
-    api_key: ""       # TODO: 请填写和风天气 API 密钥
-    base_url: "https://devapi.qweather.com"
+    api_key: "*******"
+    base_url: "https://p86yvy2tea.re.qweatherapi.com"
 
   # IP 地址查询工具
   ip:
-    access_key: ""    # TODO: 请填写 IP 查询 access key
+    access_key: "*******"
 
   # 翻译工具
   translate:
-    api_key: ""       # TODO: 请填写翻译 API 密钥
+    api_key: ""
     base_url: "https://libretranslate.com"
-
-  # 短链接工具
-  short_url:
-    api_key: ""       # TODO: 请填写短链接 API 密钥（可选）
-    base_url: ""      # TODO: 请填写短链接 API 基础 URL
 
 # MCP 工具配置
 mcp:
-  servers: []
-  # 示例：
-  # - name: "example-mcp-server"
-  #   base_url: "http://localhost:9000"
-  #   api_key: ""
-  #   timeout: 30
+  servers:
+    - name: "gold-analysis-mcp-server"
+      base_url: "http://localhost:9090"
+      api_key: ""
+      timeout: 30

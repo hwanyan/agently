@@ -1,2 +1,2 @@
-setup-env.sh
-cmd/config/config.yaml
+.idea
+cmd/config/config_local.yaml
