@@ -4,8 +4,6 @@ package agents
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/hwanyan/agently/internal/agent"
@@ -29,41 +27,38 @@ func initLLM(cfg *types.Config) types.LLMClient {
 // initPromptMapping 构建项目中全部 agent 与其对应的基本信息的映射关系
 // 即 { key(agent_id) : value(AgentInfo[name, description, prompt]) }
 // 约定：agents/<agent_id>/prompt.yaml，目录名 = Agent ID
-//
-// 参数：
-//   - agentsDir: agents 目录路径（如 ../../internal/agents）
-func initPromptMapping(agentsDir string) map[string]agent.AgentInfo {
+// 说明：从编译时嵌入的 EmbeddedPrompts (embed.FS) 中读取，无需依赖外部文件路径
+func initPromptMapping() map[string]agent.AgentInfo {
 	logger.Info("构建项目中全部 agent 与其对应的基本信息的映射关系...")
 
 	prompts := make(map[string]agent.AgentInfo)
-	// 遍历 agents 目录下的全部子目录，如果该目录下存在名为 prompt.yaml 的文件，则构建由该目录名到这个 prompt 的映射关系
-	entries, err := os.ReadDir(agentsDir)
+	// 从嵌入的文件系统中读取顶层目录
+	entries, err := EmbeddedPrompts.ReadDir(".")
 	if err != nil {
-		logger.Error("读取 agents 目录 [%s] 失败: %v", agentsDir, err)
+		logger.Error("读取嵌入的 agents 目录失败: %v", err)
 		return prompts
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
-			promptPath := filepath.Join(agentsDir, entry.Name(), "prompt.yaml")
-			// 按约定，entry.Name 即是 agent_id
-			agentID := entry.Name()
-			if _, e := os.Stat(promptPath); e != nil {
-				continue
-			}
-			prompt, e := os.ReadFile(promptPath)
-			if e != nil {
-				logger.Warning("%s agent 的 Prompt 读取失败: %v", agentID, e)
-				continue
-			}
-			// 从 prompt 中提取该 agent 的全部信息
-			agentInfo, flag := extractAgentInfo(agentID, string(prompt))
-			if flag == false {
-				logger.Warning("%s agent 的 Prompt 中未找到有效的基本信息，跳过该 agent", agentID)
-				continue
-			}
-			logger.Info("构建 %s agent 与其基本信息的映射关系成功", agentID)
-			prompts[agentID] = agentInfo
+		if !entry.IsDir() {
+			continue
 		}
+		// 按约定，entry.Name 即是 agent_id
+		agentID := entry.Name()
+		promptPath := agentID + "/prompt.yaml"
+
+		prompt, e := EmbeddedPrompts.ReadFile(promptPath)
+		if e != nil {
+			logger.Warning("%s agent 的 Prompt 读取失败: %v", agentID, e)
+			continue
+		}
+		// 从 prompt 中提取该 agent 的全部信息
+		agentInfo, flag := extractAgentInfo(agentID, string(prompt))
+		if !flag {
+			logger.Warning("%s agent 的 Prompt 中未找到有效的基本信息，跳过该 agent", agentID)
+			continue
+		}
+		logger.Info("构建 %s agent 与其基本信息的映射关系成功", agentID)
+		prompts[agentID] = agentInfo
 	}
 
 	logger.Info("构建项目中全部 agent 与其对应的基本信息的映射关系结束")
@@ -121,8 +116,8 @@ func InitAgents(cfg *types.Config) *agent.Manager {
 	// 创建 LLM 客户端
 	llmClient := initLLM(cfg)
 
-	// 构建 agent 的 prompt 映射（从 cfg.Prompt.Dir 指定的 agents 目录加载）
-	prompts := initPromptMapping(cfg.Prompt.Dir)
+	// 构建 agent 的 prompt 映射（从编译时嵌入的 embed.FS 加载）
+	prompts := initPromptMapping()
 
 	// 生成业务 Agent 列表描述（用于路由 Agent 的 Prompt 模板变量替换）
 	agentsDescription := generateAgentsDescription(prompts)

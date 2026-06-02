@@ -189,21 +189,15 @@ type LogConfig struct {
 	FilePath string `yaml:"file_path"` // 日志文件路径
 }
 
-// PromptDirConfig Agents 目录配置（约定：agents/<id>/prompt.yaml）
-type PromptDirConfig struct {
-	Dir string `yaml:"dir"` // agents 目录路径，其中每个子目录对应一个 Agent
-}
-
 // Config 应用程序总配置
 type Config struct {
-	Log      LogConfig       `yaml:"log"`      // 日志配置
-	HTTP     HTTPConfig      `yaml:"http"`     // HTTP服务配置
-	Database DatabaseConfig  `yaml:"database"` // 数据库配置
-	JWT      JWTConfig       `yaml:"jwt"`      // JWT 配置
-	Prompt   PromptDirConfig `yaml:"prompt"`   // Agents 目录配置
-	LLM      LLMConfig       `yaml:"llm"`      // LLM配置
-	Tools    ToolsConfig     `yaml:"tools"`    // 工具配置
-	MCP      MCPConfig       `yaml:"mcp"`      // MCP工具配置
+	Log      LogConfig      `yaml:"log"`      // 日志配置
+	HTTP     HTTPConfig     `yaml:"http"`     // HTTP服务配置
+	Database DatabaseConfig `yaml:"database"` // 数据库配置
+	JWT      JWTConfig      `yaml:"jwt"`      // JWT 配置
+	LLM      LLMConfig      `yaml:"llm"`      // LLM配置
+	Tools    ToolsConfig    `yaml:"tools"`    // 工具配置
+	MCP      MCPConfig      `yaml:"mcp"`      // MCP工具配置
 }
 
 // ToolParameter 工具参数定义
