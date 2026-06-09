@@ -1,16 +1,22 @@
 openapi: "3.0.3"
 info:
-  title: Agent-Hwan 智能问答 API
-  version: "1.0.0"
+  title: Agently 智能问答 API
+  version: "1.1.0"
   description: |
-    Agent-Hwan 是一个多 Agent AI 智能问答系统的后端服务。
-    支持意图自动路由、流式对话（SSE）、多 Agent 切换、对话历史管理等功能。
+    Agently 是一个多 Agent AI 智能问答系统的后端服务。
+    支持意图自动路由、流式对话（SSE）、多 Agent 切换、对话历史管理、邮箱验证注册等功能。
 
     ## 基础信息
-    - 后端地址: `http://localhost:8088`
+    - 后端地址: `http://localhost:8080`
     - 所有 JSON 接口的 Content-Type 为 `application/json; charset=utf-8`
-    - 聊天接口 `/api/chat` 使用 **SSE (Server-Sent Events)** 协议进行流式响应
+    - 聊天接口使用 **SSE (Server-Sent Events)** 协议进行流式响应
     - 所有接口已启用 CORS，前端可直接跨域调用
+
+    ## 认证流程
+    - **注册**: 先发送邮箱验证码（`/api/auth/send-code`），再携带验证码完成注册（`/api/auth/register`）
+    - **登录**: 支持用户名或邮箱登录（`/api/auth/login`）
+    - **鉴权**: 注册/登录成功后返回 JWT Token，后续请求通过 `Authorization: Bearer <token>` 头传递
+    - **验证码规则**: 6 位数字，有效期 5 分钟，同一邮箱 60 秒内只能发送一次
 
     ## 核心概念
     - **Agent**: 系统中的智能助手，每个 Agent 有独立的能力、工具集和对话历史
@@ -27,7 +33,7 @@ info:
     > 注意: 还有一个 `intention_router`（意图路由助手）是系统级 Agent，不对外暴露，不可切换。
 
 servers:
-  - url: http://localhost:8088
+  - url: http://localhost:8080
     description: 本地开发服务器
 
 paths:
@@ -419,32 +425,113 @@ paths:
                   - name: "shorturl"
                     description: "将长URL转换为短链接"
 
-  /api/auth/register:
+  /api/auth/send-code:
     post:
-      summary: 用户注册
+      summary: 发送邮箱验证码
       description: |
-        注册新用户账号。注册成功后直接返回 JWT Token，无需再次登录。
-        用户名规则：3-64 字符，只允许字母、数字、下划线和连字符。
-        密码规则：最少 6 位，服务端使用 bcrypt 哈希存储。
+        向指定邮箱发送 6 位数字验证码。
+
+        ### 规则
+        - 验证码有效期 **5 分钟**
+        - 同一邮箱 **60 秒内只能发送一次**（频率限制）
+        - 发送新验证码时，之前未使用的验证码自动失效
+
+        ### 用途说明
+        - `register`: 注册新账号时验证邮箱所有权
+        - `reset_password`: 重置密码时验证身份
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [username, email, password]
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  description: 目标邮箱地址
+                  example: "alice@example.com"
+                purpose:
+                  type: string
+                  description: |
+                    验证码用途：
+                    - `register`: 注册（默认）
+                    - `reset_password`: 重置密码
+                  enum: [register, reset_password]
+                  default: register
+                  example: "register"
+      responses:
+        "200":
+          description: 验证码发送成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  message:
+                    type: string
+                    example: "验证码已发送，请查收邮箱"
+        "400":
+          description: 参数错误或发送过于频繁
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                empty_email:
+                  value:
+                    code: 400
+                    message: "邮箱地址不能为空"
+                rate_limit:
+                  value:
+                    code: 400
+                    message: "发送过于频繁，请 60 秒后重试"
+
+  /api/auth/register:
+    post:
+      summary: 用户注册
+      description: |
+        注册新用户账号。注册成功后直接返回 JWT Token，无需再次登录。
+
+        ### 注册流程
+        1. 先调用 `POST /api/auth/send-code` 发送验证码到邮箱
+        2. 用户查收邮件，获取 6 位数字验证码
+        3. 携带验证码调用本接口完成注册
+
+        ### 规则
+        - 用户名：3-64 字符，只允许字母、数字、下划线和连字符
+        - 密码：最少 6 位，服务端使用 bcrypt 哈希存储
+        - 邮箱验证码：必填，需先通过 `/api/auth/send-code` 获取
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password, verify_code]
               properties:
                 username:
                   type: string
+                  description: 用户名（3-64 字符，字母/数字/下划线/连字符）
                   example: "alice"
                 email:
                   type: string
+                  description: 邮箱地址（需与发送验证码时使用的邮箱一致）
                   example: "alice@example.com"
                 password:
                   type: string
+                  description: 密码（最少 6 位）
                   example: "mypassword123"
+                verify_code:
+                  type: string
+                  description: 邮箱验证码（6 位数字，通过 /api/auth/send-code 获取）
+                  example: "123456"
                 nickname:
                   type: string
+                  description: 昵称（可选）
                   example: "Alice"
       responses:
         "200":
@@ -454,11 +541,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
         "400":
-          description: 参数错误或用户名/邮箱已存在
+          description: 参数错误、验证码错误或用户名/邮箱已存在
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalid_code:
+                  value:
+                    code: 400
+                    message: "验证码错误或已失效"
+                code_expired:
+                  value:
+                    code: 400
+                    message: "验证码已过期，请重新获取"
+                empty_code:
+                  value:
+                    code: 400
+                    message: "邮箱验证码不能为空"
+                username_exists:
+                  value:
+                    code: 400
+                    message: "用户名已存在"
+                email_exists:
+                  value:
+                    code: 400
+                    message: "邮箱已被注册"
 
   /api/auth/login:
     post:

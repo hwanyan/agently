@@ -14,6 +14,7 @@
 - 🔒 **并发安全** — 使用互斥锁 + channel 机制保护对话历史的并发访问
 - 💬 **对话管理** — 每个Agent拥有独立的对话历史和上下文维护
 - 🔑 **用户认证** — JWT 鉴权，支持注册/登录，所有业务接口均需登录态
+- 📧 **邮箱验证** — 注册时强制邮箱验证码校验，SMTP 发送验证码，防止恶意注册
 - 🗄️ **会话持久化** — 对话历史存储到 PostgreSQL，刷新页面后可完整恢复
 - 🌐 **HTTP API** — 提供完整的 RESTful + SSE 接口，支持前端接入
 
@@ -64,7 +65,8 @@ agently/
 │   │   └── intention_router/
 │   │       └── prompt.yaml               # 意图路由 Agent Prompt
 │   ├── auth/
-│   │   └── auth.go                       # 用户认证服务（注册、登录、JWT 签发与验证）
+│   │   ├── auth.go                       # 用户认证服务（注册、登录、JWT 签发与验证）
+│   │   └── email_verify.go               # 邮箱验证服务（验证码生成、发送、校验）
 │   ├── config/
 │   │   └── config.go                     # 配置加载与验证
 │   ├── llm/
@@ -113,6 +115,8 @@ agently/
 ### 1. 环境要求
 
 - Go 1.24+
+- PostgreSQL 16+（含 pgvector 扩展）
+- SMTP 邮件服务（必配，用于发送注册验证码）
 - 网络连接（访问 LLM API 和工具 API）
 - （可选）MCP 工具服务端（黄金分析助手需要）
 
@@ -169,6 +173,14 @@ database:
 jwt:
   secret: "your-strong-random-secret"
   expire_hour: 72
+
+# SMTP 邮件配置（必配项，未配置则无法启动）
+smtp:
+  host: "smtp.qq.com"              # SMTP 服务器地址
+  port: 587                         # SMTP 端口（587=TLS, 465=SSL）
+  username: "your-email@qq.com"     # SMTP 登录用户名（通常是邮箱地址）
+  password: "your-smtp-auth-code"   # SMTP 登录密码或授权码
+  from: ""                          # 发件人地址（可选，默认使用 username）
 
 # LLM 配置
 llm:
@@ -250,11 +262,18 @@ Authorization: Bearer <token>
 
 Token 通过注册或登录接口获取，默认有效期 **72 小时**。
 
+### 注册流程
+
+1. 调用 `POST /api/auth/send-code` 发送验证码到邮箱
+2. 用户查收邮件，获取 6 位数字验证码（有效期 5 分钟）
+3. 调用 `POST /api/auth/register` 提交用户名、邮箱、密码和验证码完成注册
+
 ### 接口列表
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| POST | `/api/auth/register` | ❌ | 用户注册，返回 JWT Token |
+| POST | `/api/auth/send-code` | ❌ | 发送邮箱验证码（注册/重置密码） |
+| POST | `/api/auth/register` | ❌ | 用户注册（需先获取验证码），返回 JWT Token |
 | POST | `/api/auth/login` | ❌ | 用户登录（支持用户名/邮箱），返回 JWT Token |
 | GET | `/api/agents` | ✅ | 获取可用 Agent 列表 |
 | POST | `/api/switch` | ✅ | 切换当前激活的 Agent |
@@ -493,14 +512,16 @@ llm:
 
 1. **API 密钥安全**：`config.yaml` 中包含敏感信息，请勿提交到公开仓库（已在 `.gitignore` 中排除）
 2. **JWT 密钥**：生产环境必须在 `config.yaml` 的 `jwt.secret` 中设置强随机值，切勿使用默认值
-3. **数据库依赖**：数据库不可用时，HTTP 服务仍可正常启动；所有业务接口（注册/登录/会话/Agent管理）均会返回 **503 Service Unavailable** 并附带明确提示，而非静默 404，前端可据此统一展示「服务暂时不可用，请稍后重试」
-4. **网络依赖**：天气、翻译、短链接等工具需要网络访问对应的 API 服务
-5. **翻译服务**：默认使用本地 LibreTranslate 实例（`http://127.0.0.1:5000`），需自行部署或替换为公共实例
-6. **MCP服务**：黄金分析助手依赖 MCP 工具服务端，如服务未启动，Agent 仍可创建但无可用工具
-7. **日志路径**：默认日志输出到 `logs/agent.log`，路径相对于运行目录
-8. **Agent独立性**：每个Agent拥有独立的对话历史和工具集，切换Agent不会丢失之前的对话
-9. **路由Agent**：`intention_router` 是系统Agent，不对外展示，不可手动切换到该Agent
-10. **消息字段**：持久化消息中工具调用列表字段名为 `tool_call_list`（JSON 序列化后的字符串）
+3. **SMTP 必配**：邮箱验证服务为必配项，未配置 SMTP 时项目无法启动。推荐使用 QQ 邮箱（smtp.qq.com:587）或网易邮箱（smtp.163.com:465），需开启 SMTP 服务并获取授权码
+4. **数据库依赖**：数据库不可用时项目无法启动，所有业务接口（注册/登录/会话/Agent管理）依赖数据库
+5. **网络依赖**：天气、翻译、短链接等工具需要网络访问对应的 API 服务
+6. **翻译服务**：默认使用本地 LibreTranslate 实例（`http://127.0.0.1:5000`），需自行部署或替换为公共实例
+7. **MCP服务**：黄金分析助手依赖 MCP 工具服务端，如服务未启动，Agent 仍可创建但无可用工具
+8. **日志路径**：默认日志输出到 `logs/agent.log`，路径相对于运行目录
+9. **Agent独立性**：每个Agent拥有独立的对话历史和工具集，切换Agent不会丢失之前的对话
+10. **路由Agent**：`intention_router` 是系统Agent，不对外展示，不可手动切换到该Agent
+11. **消息字段**：持久化消息中工具调用列表字段名为 `tool_call_list`（JSON 序列化后的字符串）
+12. **验证码频率限制**：同一邮箱 60 秒内只能发送一次验证码，验证码有效期 5 分钟
 
 ## 📄 许可证
 
