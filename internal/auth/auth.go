@@ -16,9 +16,10 @@ import (
 
 // Service 认证服务
 type Service struct {
-	userStore  *store.UserStore
-	jwtSecret  []byte
-	expireHour int
+	userStore      *store.UserStore
+	jwtSecret      []byte
+	expireHour     int
+	emailVerifySvc *EmailVerifyService // 邮箱验证服务（可为 nil，表示不启用邮箱验证）
 }
 
 // Claims JWT 载荷
@@ -32,7 +33,8 @@ type Claims struct {
 // 参数：
 //   - userStore: 用户数据访问对象
 //   - cfg: JWT 配置
-func NewService(userStore *store.UserStore, cfg types.JWTConfig) *Service {
+//   - emailVerifySvc: 邮箱验证服务（可为 nil，表示不启用邮箱验证）
+func NewService(userStore *store.UserStore, cfg types.JWTConfig, emailVerifySvc *EmailVerifyService) *Service {
 	secret := cfg.Secret
 	if secret == "" {
 		secret = "default-insecure-secret-please-change"
@@ -42,9 +44,10 @@ func NewService(userStore *store.UserStore, cfg types.JWTConfig) *Service {
 		expireHour = 72
 	}
 	return &Service{
-		userStore:  userStore,
-		jwtSecret:  []byte(secret),
-		expireHour: expireHour,
+		userStore:      userStore,
+		jwtSecret:      []byte(secret),
+		expireHour:     expireHour,
+		emailVerifySvc: emailVerifySvc,
 	}
 }
 
@@ -54,12 +57,13 @@ func NewService(userStore *store.UserStore, cfg types.JWTConfig) *Service {
 //   - email: 邮箱
 //   - password: 明文密码（至少 6 位）
 //   - nickname: 昵称（可为空）
+//   - verifyCode: 邮箱验证码（当启用邮箱验证时必填）
 //
 // 返回：
 //   - *types.User: 注册成功的用户（不含密码）
 //   - string: JWT Token
 //   - error: 可能的错误
-func (s *Service) Register(username, email, password, nickname string) (*types.User, string, error) {
+func (s *Service) Register(username, email, password, nickname, verifyCode string) (*types.User, string, error) {
 	// 参数校验
 	if err := validateUsername(username); err != nil {
 		return nil, "", err
@@ -69,6 +73,16 @@ func (s *Service) Register(username, email, password, nickname string) (*types.U
 	}
 	if len(password) < 6 {
 		return nil, "", errors.New("密码长度不能少于 6 位")
+	}
+
+	// 邮箱验证码校验（如果启用了邮箱验证服务）
+	if s.emailVerifySvc != nil {
+		if verifyCode == "" {
+			return nil, "", errors.New("邮箱验证码不能为空")
+		}
+		if err := s.emailVerifySvc.VerifyCode(email, verifyCode, "register"); err != nil {
+			return nil, "", err
+		}
 	}
 
 	// 对密码进行 bcrypt 哈希
@@ -147,6 +161,17 @@ func (s *Service) Login(usernameOrEmail, password string) (*types.User, string, 
 	// 清除密码字段
 	user.Password = ""
 	return user, token, nil
+}
+
+// SendVerificationCode 发送邮箱验证码（代理到 EmailVerifyService）
+// 参数：
+//   - email: 目标邮箱地址
+//   - purpose: 用途（register=注册, reset_password=重置密码）
+func (s *Service) SendVerificationCode(email, purpose string) error {
+	if s.emailVerifySvc == nil {
+		return errors.New("邮箱验证服务未启用")
+	}
+	return s.emailVerifySvc.SendVerificationCode(email, purpose)
 }
 
 // VerifyToken 验证 JWT Token，返回 Claims

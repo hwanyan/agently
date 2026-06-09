@@ -173,3 +173,27 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER trg_messages_update_session
     AFTER INSERT ON messages
     FOR EACH ROW EXECUTE FUNCTION update_session_on_message();
+
+-- ============================================================
+-- 7. 邮箱验证码表 (email_verifications)
+-- 存储邮箱验证码，用于注册、重置密码等场景
+-- ============================================================
+CREATE TABLE IF NOT EXISTS email_verifications (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    email       VARCHAR(255) NOT NULL,                        -- 目标邮箱
+    code        VARCHAR(10)  NOT NULL,                        -- 验证码（6位数字）
+    purpose     VARCHAR(32)  NOT NULL DEFAULT 'register',     -- 用途: register, reset_password
+    used        BOOLEAN      NOT NULL DEFAULT false,          -- 是否已使用
+    expires_at  TIMESTAMPTZ  NOT NULL,                        -- 过期时间
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_verifications_email   ON email_verifications(email, purpose, used);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_expires ON email_verifications(expires_at);
+
+COMMENT ON TABLE  email_verifications           IS '邮箱验证码表';
+COMMENT ON COLUMN email_verifications.email     IS '目标邮箱地址';
+COMMENT ON COLUMN email_verifications.code      IS '6位数字验证码';
+COMMENT ON COLUMN email_verifications.purpose   IS '用途: register=注册, reset_password=重置密码';
+COMMENT ON COLUMN email_verifications.used      IS '是否已使用';
+COMMENT ON COLUMN email_verifications.expires_at IS '验证码过期时间';

@@ -195,6 +195,7 @@ type Config struct {
 	HTTP     HTTPConfig     `yaml:"http"`     // HTTP服务配置
 	Database DatabaseConfig `yaml:"database"` // 数据库配置
 	JWT      JWTConfig      `yaml:"jwt"`      // JWT 配置
+	SMTP     SMTPConfig     `yaml:"smtp"`     // SMTP 邮件配置
 	LLM      LLMConfig      `yaml:"llm"`      // LLM配置
 	Tools    ToolsConfig    `yaml:"tools"`    // 工具配置
 	MCP      MCPConfig      `yaml:"mcp"`      // MCP工具配置
@@ -268,6 +269,15 @@ type DatabaseConfig struct {
 type JWTConfig struct {
 	Secret     string `yaml:"secret"`      // JWT 签名密钥，生产环境必须设置强随机值
 	ExpireHour int    `yaml:"expire_hour"` // Token 有效期（小时），默认 72
+}
+
+// SMTPConfig 邮件发送配置
+type SMTPConfig struct {
+	Host     string `yaml:"host"`     // SMTP 服务器地址，如 smtp.qq.com
+	Port     int    `yaml:"port"`     // SMTP 端口，如 587（TLS）或 465（SSL）
+	Username string `yaml:"username"` // SMTP 登录用户名（通常是邮箱地址）
+	Password string `yaml:"password"` // SMTP 登录密码或授权码
+	From     string `yaml:"from"`     // 发件人地址（可选，默认使用 Username）
 }
 
 // ============================================================

@@ -23,6 +23,14 @@ jwt:
   secret: "*******"          # TODO: 请填写 JWT 签名密钥（生产环境必须设置强随机值）
   expire_hour: 72
 
+# SMTP 邮件配置（用于发送验证码）
+smtp:
+  host: ""                   # SMTP 服务器地址，如 smtp.qq.com（留空则验证码打印到控制台）
+  port: 587                  # SMTP 端口，587(TLS) 或 465(SSL)
+  username: ""               # SMTP 登录用户名（通常是邮箱地址）
+  password: ""               # SMTP 登录密码或授权码
+  from: ""                   # 发件人地址（可选，默认使用 username）
+
 # LLM 大语言模型配置
 llm:
   provider: "deepseek"

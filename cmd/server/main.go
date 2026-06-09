@@ -77,7 +77,19 @@ func initDatabase(cfg *types.Config) (authSvc *auth.Service, sessionStore *store
 			userStore := store.NewUserStore(db)
 			sessionStore = store.NewSessionStore(db)
 			messageStore = store.NewMessageStore(db)
-			authSvc = auth.NewService(userStore, cfg.JWT)
+
+			// 初始化邮箱验证服务（如果配置了 SMTP）
+			var emailVerifySvc *auth.EmailVerifyService
+			if cfg.SMTP.Host != "" {
+				emailVerifySvc = auth.NewEmailVerifyService(db, cfg.SMTP)
+				logger.Info("邮箱验证服务已启用（SMTP: %s）", cfg.SMTP.Host)
+			} else {
+				// 开发模式：不配置 SMTP 时仍然创建服务，验证码会打印到控制台
+				emailVerifySvc = auth.NewEmailVerifyService(db, cfg.SMTP)
+				logger.Info("邮箱验证服务已启用（开发模式，验证码将打印到控制台）")
+			}
+
+			authSvc = auth.NewService(userStore, cfg.JWT, emailVerifySvc)
 			logger.Info("数据库连接成功，认证服务已初始化")
 		}
 	} else {

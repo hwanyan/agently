@@ -75,9 +75,11 @@ func (h *HTTPService) Start() {
 	if h.authSvc != nil {
 		mux.HandleFunc("/api/auth/register", h.corsMiddleware(h.handleRegister()))
 		mux.HandleFunc("/api/auth/login", h.corsMiddleware(h.handleLogin()))
+		mux.HandleFunc("/api/auth/send-code", h.corsMiddleware(h.handleSendVerifyCode()))
 	} else {
 		mux.HandleFunc("/api/auth/register", h.corsMiddleware(dbUnavailable))
 		mux.HandleFunc("/api/auth/login", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/auth/send-code", h.corsMiddleware(dbUnavailable))
 	}
 
 	// 会话相关路由（需要鉴权）
@@ -248,10 +250,11 @@ func (h *HTTPService) handleRegister() http.HandlerFunc {
 		}
 
 		var req struct {
-			Username string `json:"username"`
-			Email    string `json:"email"`
-			Password string `json:"password"`
-			Nickname string `json:"nickname"`
+			Username   string `json:"username"`
+			Email      string `json:"email"`
+			Password   string `json:"password"`
+			Nickname   string `json:"nickname"`
+			VerifyCode string `json:"verify_code"` // 邮箱验证码
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			logger.Error("注册请求体解析失败: %v", err)
@@ -260,7 +263,7 @@ func (h *HTTPService) handleRegister() http.HandlerFunc {
 		}
 
 		logger.Info("HTTP请求: 用户注册 - 用户名: %s", req.Username)
-		user, token, err := h.authSvc.Register(req.Username, req.Email, req.Password, req.Nickname)
+		user, token, err := h.authSvc.Register(req.Username, req.Email, req.Password, req.Nickname, req.VerifyCode)
 		if err != nil {
 			logger.Error("用户注册失败: %v", err)
 			h.jsonError(w, http.StatusBadRequest, err.Error())
@@ -272,6 +275,46 @@ func (h *HTTPService) handleRegister() http.HandlerFunc {
 			"code":  0,
 			"token": token,
 			"user":  user,
+		})
+	}
+}
+
+// handleSendVerifyCode 发送邮箱验证码
+// POST /api/auth/send-code
+func (h *HTTPService) handleSendVerifyCode() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			logger.Warning("非法请求方法: %s", r.Method)
+			h.jsonError(w, http.StatusMethodNotAllowed, "仅支持 POST 请求")
+			return
+		}
+
+		var req struct {
+			Email   string `json:"email"`
+			Purpose string `json:"purpose"` // register 或 reset_password
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logger.Error("发送验证码请求体解析失败: %v", err)
+			h.jsonError(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+			return
+		}
+
+		if req.Email == "" {
+			h.jsonError(w, http.StatusBadRequest, "邮箱地址不能为空")
+			return
+		}
+
+		logger.Info("HTTP请求: 发送验证码 - 邮箱: %s, 用途: %s", req.Email, req.Purpose)
+		if err := h.authSvc.SendVerificationCode(req.Email, req.Purpose); err != nil {
+			logger.Error("发送验证码失败: %v", err)
+			h.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		logger.Info("验证码发送成功: %s", req.Email)
+		h.jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"code":    0,
+			"message": "验证码已发送，请查收邮箱",
 		})
 	}
 }
