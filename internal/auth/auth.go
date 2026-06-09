@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/store"
 	"github.com/hwanyan/agently/pkg/types"
 
@@ -33,8 +34,16 @@ type Claims struct {
 // 参数：
 //   - userStore: 用户数据访问对象
 //   - cfg: JWT 配置
-//   - emailVerifySvc: 邮箱验证服务（可为 nil，表示不启用邮箱验证）
+//   - emailVerifySvc: 邮箱验证服务
 func NewService(userStore *store.UserStore, cfg types.JWTConfig, emailVerifySvc *EmailVerifyService) *Service {
+	if userStore == nil {
+		logger.Error("userStore is nil")
+		return nil
+	}
+	if emailVerifySvc == nil {
+		logger.Error("emailVerifySvc is nil")
+		return nil
+	}
 	secret := cfg.Secret
 	if secret == "" {
 		secret = "default-insecure-secret-please-change"

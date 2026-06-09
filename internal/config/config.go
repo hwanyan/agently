@@ -78,11 +78,9 @@ func validateConfig(config *types.Config) error {
 	if config.LLM.Provider == "" {
 		return fmt.Errorf("LLM提供商不能为空")
 	}
-
 	if config.LLM.APIKey == "" {
 		return fmt.Errorf("LLM API密钥不能为空")
 	}
-
 	if config.LLM.Model == "" {
 		return fmt.Errorf("LLM模型不能为空")
 	}
