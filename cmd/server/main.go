@@ -8,11 +8,14 @@ import (
 	"github.com/hwanyan/agently/internal/agent"
 	"github.com/hwanyan/agently/internal/agents"
 	"github.com/hwanyan/agently/internal/auth"
+	"github.com/hwanyan/agently/internal/cli"
 	"github.com/hwanyan/agently/internal/config"
 	"github.com/hwanyan/agently/internal/httpserver"
 	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/store"
 	"github.com/hwanyan/agently/pkg/types"
+
+	"golang.org/x/term"
 )
 
 func main() {
@@ -22,14 +25,23 @@ func main() {
 	// 初始化日志系统
 	initLogger(cfg)
 
-	// 注册全部的 agent
-	agentManager := agents.InitAgents(cfg)
-
 	// 初始化数据库和认证服务
 	authSvc, sessionStore, messageStore := initDatabase(cfg)
 
-	// 启动 HTTP 服务
-	startHTTPServer(cfg, agentManager, authSvc, sessionStore, messageStore)
+	// 判断是否有终端（tty），决定运行模式
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		// 有终端：开发模式，启动 CLI + HTTP
+		cliAgentManager := agents.InitAgents(cfg)
+		httpAgentManager := agents.InitAgents(cfg)
+
+		go startHTTPServer(cfg, httpAgentManager, authSvc, sessionStore, messageStore)
+		startCLISession(cliAgentManager)
+	} else {
+		// 无终端：服务器模式，仅启动 HTTP 服务（阻塞）
+		logger.Info("检测到无终端环境，以服务模式启动（仅HTTP）")
+		httpAgentManager := agents.InitAgents(cfg)
+		startHTTPServer(cfg, httpAgentManager, authSvc, sessionStore, messageStore)
+	}
 }
 
 // initConfig 加载配置
@@ -45,9 +57,9 @@ func initConfig() *types.Config {
 
 // initLogger 初始化日志系统
 func initLogger(cfg *types.Config) {
-	if err := logger.Init(cfg.Log.FilePath); err != nil {
-		log.Fatalf("初始化日志系统失败: %v", err)
-		logger.Error("初始化日志系统失败: %v", err)
+	if e := logger.Init(cfg.Log.FilePath); e != nil {
+		log.Fatalf("初始化日志系统失败: %v", e)
+		logger.Error("初始化日志系统失败: %v", e)
 		os.Exit(0)
 	}
 	logger.Info("Agently 系统启动")
@@ -107,4 +119,11 @@ func startHTTPServer(
 	)
 	httpService.Start()
 	logger.Info("HTTP服务启动成功")
+}
+
+// startCLISession 启动CLI交互会话
+func startCLISession(manager *agent.Manager) {
+	cliService := cli.NewCLIService(manager)
+	cliService.Start()
+	logger.Info("CLI交互服务启动成功")
 }
