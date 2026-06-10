@@ -1,5 +1,5 @@
-// Package httpserver 提供HTTP API服务功能
-package httpserver
+// Package http 提供HTTP API服务功能
+package http
 
 import (
 	"encoding/json"

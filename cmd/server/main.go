@@ -9,7 +9,7 @@ import (
 	"github.com/hwanyan/agently/internal/agents"
 	"github.com/hwanyan/agently/internal/auth"
 	"github.com/hwanyan/agently/internal/config"
-	"github.com/hwanyan/agently/internal/httpserver"
+	"github.com/hwanyan/agently/internal/http"
 	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/store"
 	"github.com/hwanyan/agently/pkg/types"
@@ -98,7 +98,7 @@ func startHTTPServer(
 	sessionStore *store.SessionStore,
 	messageStore *store.MessageStore,
 ) {
-	httpService := httpserver.NewHTTPService(
+	httpService := http.NewHTTPService(
 		manager,
 		authSvc,
 		sessionStore,
