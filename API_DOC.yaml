@@ -1,13 +1,13 @@
 openapi: "3.0.3"
 info:
   title: Agently 智能问答 API
-  version: "1.1.0"
+  version: "0.1.1"
   description: |
     Agently 是一个多 Agent AI 智能问答系统的后端服务。
     支持意图自动路由、流式对话（SSE）、多 Agent 切换、对话历史管理、邮箱验证注册等功能。
 
     ## 基础信息
-    - 后端地址: `http://localhost:8080`
+    - 后端地址: `http://localhost:8081`
     - 所有 JSON 接口的 Content-Type 为 `application/json; charset=utf-8`
     - 聊天接口使用 **SSE (Server-Sent Events)** 协议进行流式响应
     - 所有接口已启用 CORS，前端可直接跨域调用
@@ -33,7 +33,7 @@ info:
     > 注意: 还有一个 `intention_router`（意图路由助手）是系统级 Agent，不对外暴露，不可切换。
 
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8081
     description: 本地开发服务器
 
 paths:
