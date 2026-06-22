@@ -101,7 +101,7 @@ agently/
 │   └── utils/
 │       └── utils.go                      # 工具函数
 ├── scripts/
-│   └── schema.sql                        # 数据库建表 SQL（users / sessions / messages）
+│   └── 001_create_tables.sql                        # 数据库建表 SQL（users / sessions / messages）
 ├── logs/
 │   └── agent.log                         # 运行日志输出
 ├── REFERENCE/                            # 参考文档
@@ -141,7 +141,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- 执行建表脚本
-\i scripts/schema.sql
+\i scripts/001_create_tables.sql
 ```
 
 ### 4. 配置
