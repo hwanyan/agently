@@ -73,26 +73,26 @@ func (h *HTTPService) Start() {
 
 	// 认证相关路由（无需鉴权）
 	if h.authSvc != nil {
-		mux.HandleFunc("/api/auth/register", h.corsMiddleware(h.handleRegister()))
-		mux.HandleFunc("/api/auth/login", h.corsMiddleware(h.handleLogin()))
-		mux.HandleFunc("/api/auth/send-code", h.corsMiddleware(h.handleSendVerifyCode()))
+		mux.HandleFunc("/api/agently/auth/register", h.corsMiddleware(h.handleRegister()))
+		mux.HandleFunc("/api/agently/auth/login", h.corsMiddleware(h.handleLogin()))
+		mux.HandleFunc("/api/agently/auth/send-code", h.corsMiddleware(h.handleSendVerifyCode()))
 	} else {
-		mux.HandleFunc("/api/auth/register", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/auth/login", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/auth/send-code", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/auth/register", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/auth/login", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/auth/send-code", h.corsMiddleware(dbUnavailable))
 	}
 
 	// 会话相关路由（需要鉴权）
 	if h.authSvc != nil && h.sessionStore != nil && h.messageStore != nil {
-		mux.HandleFunc("/api/sessions", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessions())))
-		mux.HandleFunc("/api/sessions/", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessionDetail())))
-		mux.HandleFunc("/api/agents", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleAgents())))
-		mux.HandleFunc("/api/switch", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSwitch())))
+		mux.HandleFunc("/api/agently/sessions", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessions())))
+		mux.HandleFunc("/api/agently/sessions/", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessionDetail())))
+		mux.HandleFunc("/api/agently/agents", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleAgents())))
+		mux.HandleFunc("/api/agently/switch", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSwitch())))
 	} else {
-		mux.HandleFunc("/api/sessions", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/sessions/", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/agents", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/switch", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/sessions", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/sessions/", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/agents", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/switch", h.corsMiddleware(dbUnavailable))
 	}
 
 	server := &http.Server{
@@ -146,7 +146,7 @@ func (h *HTTPService) jsonError(w http.ResponseWriter, statusCode int, message s
 }
 
 // handleAgents 获取可用 Agent 列表
-// GET /api/agents
+// GET /api/agently/agents
 func (h *HTTPService) handleAgents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -187,7 +187,7 @@ func (h *HTTPService) handleAgents() http.HandlerFunc {
 }
 
 // handleSwitch 切换当前 Agent
-// POST /api/switch
+// POST /api/agently/switch
 // 请求体: {"agent_id": "general"}
 func (h *HTTPService) handleSwitch() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +240,7 @@ func (h *HTTPService) handleSwitch() http.HandlerFunc {
 }
 
 // handleRegister 用户注册
-// POST /api/auth/register
+// POST /api/agently/auth/register
 func (h *HTTPService) handleRegister() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -280,7 +280,7 @@ func (h *HTTPService) handleRegister() http.HandlerFunc {
 }
 
 // handleSendVerifyCode 发送邮箱验证码
-// POST /api/auth/send-code
+// POST /api/agently/auth/send-code
 func (h *HTTPService) handleSendVerifyCode() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -320,7 +320,7 @@ func (h *HTTPService) handleSendVerifyCode() http.HandlerFunc {
 }
 
 // handleLogin 用户登录
-// POST /api/auth/login
+// POST /api/agently/auth/login
 func (h *HTTPService) handleLogin() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -440,8 +440,8 @@ func (h *HTTPService) handleSessionDetail() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.GetUserID(r)
 
-		// 解析路径：/api/sessions/{id} 或 /api/sessions/{id}/messages 或 /api/sessions/{id}/chat
-		path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+		// 解析路径：/api/agently/sessions/{id} 或 /api/agently/sessions/{id}/messages 或 /api/agently/sessions/{id}/chat
+		path := strings.TrimPrefix(r.URL.Path, "/api/agently/sessions/")
 		parts := strings.SplitN(path, "/", 2)
 		sessionID := parts[0]
 		subPath := ""

@@ -264,28 +264,28 @@ Token 通过注册或登录接口获取，默认有效期 **72 小时**。
 
 ### 注册流程
 
-1. 调用 `POST /api/auth/send-code` 发送验证码到邮箱
+1. 调用 `POST /api/agently/auth/send-code` 发送验证码到邮箱
 2. 用户查收邮件，获取 6 位数字验证码（有效期 5 分钟）
-3. 调用 `POST /api/auth/register` 提交用户名、邮箱、密码和验证码完成注册
+3. 调用 `POST /api/agently/auth/register` 提交用户名、邮箱、密码和验证码完成注册
 
 ### 接口列表
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| POST | `/api/auth/send-code` | ❌ | 发送邮箱验证码（注册/重置密码） |
-| POST | `/api/auth/register` | ❌ | 用户注册（需先获取验证码），返回 JWT Token |
-| POST | `/api/auth/login` | ❌ | 用户登录（支持用户名/邮箱），返回 JWT Token |
-| GET | `/api/agents` | ✅ | 获取可用 Agent 列表 |
-| POST | `/api/switch` | ✅ | 切换当前激活的 Agent |
-| GET | `/api/sessions` | ✅ | 查询会话列表（支持按 agent_id 过滤、分页） |
-| POST | `/api/sessions` | ✅ | 创建新会话 |
-| GET | `/api/sessions/{id}/messages` | ✅ | 查询会话消息历史 |
-| POST | `/api/sessions/{id}/chat` | ✅ | 在会话中发送消息（SSE 流式 + 持久化） |
-| DELETE | `/api/sessions/{id}` | ✅ | 归档会话（软删除） |
+| POST | `/api/agently/auth/send-code` | ❌ | 发送邮箱验证码（注册/重置密码） |
+| POST | `/api/agently/auth/register` | ❌ | 用户注册（需先获取验证码），返回 JWT Token |
+| POST | `/api/agently/auth/login` | ❌ | 用户登录（支持用户名/邮箱），返回 JWT Token |
+| GET | `/api/agently/agents` | ✅ | 获取可用 Agent 列表 |
+| POST | `/api/agently/switch` | ✅ | 切换当前激活的 Agent |
+| GET | `/api/agently/sessions` | ✅ | 查询会话列表（支持按 agent_id 过滤、分页） |
+| POST | `/api/agently/sessions` | ✅ | 创建新会话 |
+| GET | `/api/agently/sessions/{id}/messages` | ✅ | 查询会话消息历史 |
+| POST | `/api/agently/sessions/{id}/chat` | ✅ | 在会话中发送消息（SSE 流式 + 持久化） |
+| DELETE | `/api/agently/sessions/{id}` | ✅ | 归档会话（软删除） |
 
 ### SSE 事件格式（聊天接口）
 
-`/api/sessions/{id}/chat` 响应为 `text/event-stream`，包含以下事件：
+`/api/agently/sessions/{id}/chat` 响应为 `text/event-stream`，包含以下事件：
 
 ```
 event: route
@@ -333,7 +333,7 @@ graph TD
     H --> |AI 对话| AM2[Agent Manager]
     AM2 --> AG2[Target Agent]
     AG2 --> |SSE 流式| FE
-    FE --> |无需鉴权| AUTH[/api/auth/*<br/>注册 / 登录]
+    FE --> |无需鉴权| AUTH[/api/agently/auth/*<br/>注册 / 登录]
     AUTH --> AS[AuthService<br/>bcrypt + JWT]
     AS --> US[UserStore<br/>PostgreSQL]
 ```
