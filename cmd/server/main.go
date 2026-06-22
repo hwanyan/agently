@@ -26,7 +26,8 @@ func main() {
 	agentManager := agents.InitAgents(cfg)
 
 	// 初始化数据库和认证服务
-	authSvc, sessionStore, messageStore := initDatabase(cfg)
+	db, authSvc, sessionStore, messageStore := initDatabase(cfg)
+	defer db.Close()
 
 	// 启动 HTTP 服务
 	startHTTPServer(cfg, agentManager, authSvc, sessionStore, messageStore)
@@ -54,9 +55,13 @@ func initLogger(cfg *types.Config) {
 }
 
 // initDatabase 初始化数据库服务
-func initDatabase(cfg *types.Config) (authSvc *auth.Service, sessionStore *store.SessionStore,
-	messageStore *store.MessageStore) {
-	var db *store.DB
+//
+// 注意：返回的 *store.DB 是连接池句柄，其生命周期必须与进程一致；
+// 由调用方（main）负责在进程退出时调用 db.Close()，
+// 切勿在本函数内使用 defer db.Close()，否则函数返回后连接池立刻被关闭，
+// 业务接口在后续调用 SQL 时会得到 "sql: database is closed" 错误。
+func initDatabase(cfg *types.Config) (db *store.DB, authSvc *auth.Service,
+	sessionStore *store.SessionStore, messageStore *store.MessageStore) {
 	var err error
 	if cfg.Database.DSN == "" {
 		log.Fatalf("未配置数据库 DSN，服务启动失败")
@@ -75,7 +80,6 @@ func initDatabase(cfg *types.Config) (authSvc *auth.Service, sessionStore *store
 		os.Exit(0)
 	}
 
-	defer db.Close()
 	userStore := store.NewUserStore(db)
 	sessionStore = store.NewSessionStore(db)
 	messageStore = store.NewMessageStore(db)
@@ -87,7 +91,7 @@ func initDatabase(cfg *types.Config) (authSvc *auth.Service, sessionStore *store
 	logger.Info("数据库连接成功，认证服务已初始化")
 
 	logger.Info("数据库初始化完成")
-	return authSvc, sessionStore, messageStore
+	return db, authSvc, sessionStore, messageStore
 }
 
 // startHTTPServer 启动 HTTP 服务
