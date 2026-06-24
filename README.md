@@ -66,7 +66,8 @@ agently/
 │   │       └── prompt.yaml               # 意图路由 Agent Prompt
 │   ├── auth/
 │   │   ├── auth.go                       # 用户认证服务（注册、登录、JWT 签发与验证）
-│   │   └── email_verify.go               # 邮箱验证服务（验证码生成、发送、校验）
+│   │   ├── email_verify.go               # 邮箱验证业务编排（频率限制、生成验证码、模板渲染、调度）
+│   │   └── mailer.go                     # SMTP 邮件发送器（协议层，自动 TLS/STARTTLS，分步握手日志）
 │   ├── config/
 │   │   └── config.go                     # 配置加载与验证
 │   ├── llm/
@@ -81,7 +82,8 @@ agently/
 │   │   ├── db.go                         # 数据库连接池管理
 │   │   ├── user.go                       # 用户数据访问对象（CRUD）
 │   │   ├── session.go                    # 会话数据访问对象（创建、查询、归档）
-│   │   └── message.go                    # 消息数据访问对象（保存、查询、内存转换）
+│   │   ├── message.go                    # 消息数据访问对象（保存、查询、内存转换）
+│   │   └── email_verification.go         # 邮箱验证码数据访问对象（频率查询、写入、失效、校验）
 │   └── tools/
 │       ├── setup.go                      # 工具注册辅助函数
 │       ├── local/                        # 本地工具（插件化自注册）
@@ -458,7 +460,7 @@ smtp:
 3. **如果必须短信**：考虑 Twilio（海外用户）或腾讯云 SMS（国内用户，需企业认证）
 4. **替代方案**：可以考虑 OAuth 第三方登录（微信/GitHub/Google），免去验证码环节
 
-> 本项目已实现完整的邮箱验证码方案（见 `internal/auth/email_verify.go`），只需在 `config.yaml` 中配置 SMTP 信息即可投入使用。
+> 本项目已实现完整的邮箱验证码方案（业务编排见 [internal/auth/email_verify.go](internal/auth/email_verify.go)，SMTP 协议层见 [internal/auth/mailer.go](internal/auth/mailer.go)，数据访问见 [internal/store/email_verification.go](internal/store/email_verification.go)），只需在 `config.yaml` 中配置 SMTP 信息即可投入使用。
 
 ---
 
