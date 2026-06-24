@@ -1,30 +1,57 @@
-// Package auth 提供邮箱验证码功能
+// Package auth 提供邮箱验证码功能（业务编排层）
+//
+// 职责：
+//   - 生成验证码、控制频率限制、控制有效期
+//   - 渲染验证码邮件正文模板
+//   - 协调 store.EmailVerificationStore（数据持久化）和 Mailer（SMTP 发送）
+//
+// 不做：
+//   - 不直接写 SQL（交给 store.EmailVerificationStore）
+//   - 不直接调用 net/smtp（交给 Mailer）
 package auth
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"errors"
 	"fmt"
 	"math/big"
-	"net/smtp"
 	"time"
 
+	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/store"
 	"github.com/hwanyan/agently/pkg/types"
 )
 
-// EmailVerifyService 邮箱验证服务
+// 验证码业务常量
+const (
+	// codeLength 验证码位数
+	codeLength = 6
+	// codeTTL 验证码有效期
+	codeTTL = 5 * time.Minute
+	// resendInterval 同一邮箱的最小重发间隔
+	resendInterval = 60 * time.Second
+)
+
+// 用途常量
+const (
+	PurposeRegister      = "register"
+	PurposeResetPassword = "reset_password"
+)
+
+// EmailVerifyService 邮箱验证服务（业务编排）
 type EmailVerifyService struct {
-	db         *store.DB
-	smtpConfig types.SMTPConfig
+	repo   *store.EmailVerificationStore
+	mailer *Mailer
 }
 
 // NewEmailVerifyService 创建邮箱验证服务
+//
+// 该构造函数保留 (db, smtpCfg) 的签名以兼容现有调用方（main.go）；
+// 内部自动构造 EmailVerificationStore 和 Mailer。
 func NewEmailVerifyService(db *store.DB, cfg types.SMTPConfig) *EmailVerifyService {
 	return &EmailVerifyService{
-		db:         db,
-		smtpConfig: cfg,
+		repo:   store.NewEmailVerificationStore(db),
+		mailer: NewMailer(cfg),
 	}
 }
 
@@ -40,50 +67,36 @@ func (s *EmailVerifyService) SendVerificationCode(email, purpose string) error {
 		return errors.New("邮箱地址不能为空")
 	}
 	if purpose == "" {
-		purpose = "register"
+		purpose = PurposeRegister
 	}
 
-	// 频率限制：同一邮箱 60 秒内只能发送一次
-	var lastSentAt sql.NullTime
-	err := s.db.QueryRow(`
-		SELECT created_at FROM email_verifications
-		WHERE email = $1 AND purpose = $2
-		ORDER BY created_at DESC LIMIT 1
-	`, email, purpose).Scan(&lastSentAt)
-	if err == nil && lastSentAt.Valid {
-		if time.Since(lastSentAt.Time) < 60*time.Second {
-			return errors.New("发送过于频繁，请 60 秒后重试")
-		}
+	// 1. 频率限制：同一邮箱 60 秒内只能发送一次
+	lastSentAt, err := s.repo.GetLastSentAt(email, purpose)
+	if err != nil {
+		return err
+	}
+	if lastSentAt != nil && time.Since(*lastSentAt) < resendInterval {
+		return errors.New("发送过于频繁，请 60 秒后重试")
 	}
 
-	// 生成 6 位数字验证码
-	code, err := generateCode(6)
+	// 2. 生成验证码
+	code, err := generateCode(codeLength)
 	if err != nil {
 		return fmt.Errorf("生成验证码失败: %w", err)
 	}
+	expiresAt := time.Now().Add(codeTTL)
 
-	// 验证码有效期 5 分钟
-	expiresAt := time.Now().Add(5 * time.Minute)
-
-	// 将之前未使用的验证码标记为已失效
-	_, _ = s.db.Exec(`
-		UPDATE email_verifications
-		SET used = true
-		WHERE email = $1 AND purpose = $2 AND used = false
-	`, email, purpose)
-
-	// 存储验证码
-	_, err = s.db.Exec(`
-		INSERT INTO email_verifications (email, code, purpose, expires_at)
-		VALUES ($1, $2, $3, $4)
-	`, email, code, purpose, expiresAt)
-	if err != nil {
-		return fmt.Errorf("存储验证码失败: %w", err)
+	// 3. 失效旧码 + 写入新码（best-effort：失效失败不阻断流程）
+	if e := s.repo.InvalidatePending(email, purpose); e != nil {
+		logger.Warning("失效旧验证码失败（忽略继续）: email=%s, err=%v", email, e)
+	}
+	if err = s.repo.Insert(email, code, purpose, expiresAt); err != nil {
+		return err
 	}
 
-	// 发送邮件
-	if e := s.sendEmail(email, code, purpose); e != nil {
-		return fmt.Errorf("发送验证邮件失败: %w", e)
+	// 4. 发送邮件
+	if err = s.dispatchEmail(email, code, purpose); err != nil {
+		return fmt.Errorf("发送验证邮件失败: %w", err)
 	}
 
 	return nil
@@ -102,91 +115,59 @@ func (s *EmailVerifyService) VerifyCode(email, code, purpose string) error {
 		return errors.New("邮箱和验证码不能为空")
 	}
 	if purpose == "" {
-		purpose = "register"
+		purpose = PurposeRegister
 	}
 
-	var (
-		id        string
-		expiresAt time.Time
-	)
-
-	// 查询最新的未使用验证码
-	err := s.db.QueryRow(`
-		SELECT id, expires_at FROM email_verifications
-		WHERE email = $1 AND code = $2 AND purpose = $3 AND used = false
-		ORDER BY created_at DESC LIMIT 1
-	`, email, code, purpose).Scan(&id, &expiresAt)
+	// 1. 查找最新的未使用验证码
+	v, err := s.repo.FindActive(email, code, purpose)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("验证码错误或已失效")
-		}
-		return fmt.Errorf("查询验证码失败: %w", err)
+		return err
+	}
+	if v == nil {
+		return errors.New("验证码错误或已失效")
 	}
 
-	// 检查是否过期
-	if time.Now().After(expiresAt) {
+	// 2. 检查是否过期
+	if time.Now().After(v.ExpiresAt) {
 		return errors.New("验证码已过期，请重新获取")
 	}
 
-	// 标记为已使用
-	_, err = s.db.Exec(`UPDATE email_verifications SET used = true WHERE id = $1`, id)
-	if err != nil {
-		return fmt.Errorf("更新验证码状态失败: %w", err)
+	// 3. 标记为已使用
+	if err = s.repo.MarkUsed(v.ID); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// sendEmail 通过 SMTP 发送验证码邮件
-func (s *EmailVerifyService) sendEmail(to, code, purpose string) error {
-	cfg := s.smtpConfig
-
-	// 如果未配置 SMTP，打印到日志（开发模式）
-	if cfg.Host == "" {
-		fmt.Printf("[DEV] 邮箱验证码 -> %s: %s (用途: %s)\n", to, code, purpose)
+// dispatchEmail 渲染验证码邮件并交给 Mailer 发送
+//
+// SMTP 未配置时进入开发模式：仅在日志中打印验证码、不真正发邮件。
+func (s *EmailVerifyService) dispatchEmail(to, code, purpose string) error {
+	if !s.mailer.Enabled() {
+		logger.Warning("SMTP 未配置，验证码仅记录到日志: to=%s, code=%s, purpose=%s", to, code, purpose)
 		return nil
 	}
+	subject, body := renderCodeMail(code, purpose)
+	return s.mailer.SendMail(to, subject, body)
+}
 
-	// 构建邮件主题和正文
-	subject := "验证码"
-	body := ""
+// renderCodeMail 渲染验证码邮件的主题与正文
+func renderCodeMail(code, purpose string) (subject, body string) {
 	switch purpose {
-	case "register":
-		subject = "注册验证码 - Agently"
-		body = fmt.Sprintf(
-			"您好！\n\n您正在注册 Agently 账号，验证码为：%s\n\n验证码有效期为 5 分钟，请尽快完成验证。\n\n如果这不是您本人的操作，请忽略此邮件。",
+	case PurposeRegister:
+		return "注册验证码 - Agently", fmt.Sprintf(
+			"您好！\r\n\r\n您正在注册 Agently 账号，验证码为：%s\r\n\r\n验证码有效期为 5 分钟，请尽快完成验证。\r\n\r\n如果这不是您本人的操作，请忽略此邮件。",
 			code,
 		)
-	case "reset_password":
-		subject = "重置密码验证码 - Agently"
-		body = fmt.Sprintf(
-			"您好！\n\n您正在重置 Agently 账号密码，验证码为：%s\n\n验证码有效期为 5 分钟，请尽快完成操作。\n\n如果这不是您本人的操作，请忽略此邮件。",
+	case PurposeResetPassword:
+		return "重置密码验证码 - Agently", fmt.Sprintf(
+			"您好！\r\n\r\n您正在重置 Agently 账号密码，验证码为：%s\r\n\r\n验证码有效期为 5 分钟，请尽快完成操作。\r\n\r\n如果这不是您本人的操作，请忽略此邮件。",
 			code,
 		)
 	default:
-		body = fmt.Sprintf("您的验证码为：%s，有效期 10 分钟。", code)
+		return "验证码 - Agently", fmt.Sprintf("您的验证码为：%s，有效期 5 分钟。", code)
 	}
-
-	// 构建邮件内容
-	from := cfg.From
-	if from == "" {
-		from = cfg.Username
-	}
-
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		from, to, subject, body)
-
-	// SMTP 认证
-	auth := smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
-
-	// 发送邮件
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	err := smtp.SendMail(addr, auth, from, []string{to}, []byte(msg))
-	if err != nil {
-		return fmt.Errorf("SMTP 发送失败: %w", err)
-	}
-
-	return nil
 }
 
 // generateCode 生成指定位数的数字验证码（密码学安全随机数）
