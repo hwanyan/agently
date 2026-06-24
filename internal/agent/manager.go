@@ -46,7 +46,6 @@ func (m *Manager) Register(agentInstance *BasicAgent, agentInfo *AgentInfo) {
 
 	agentInfo.Registered = true
 	m.agents[agentInfo.ID] = agentInstance
-	logger.Info("Agent [%s] 已注册到管理器", agentInfo.ID)
 
 	if agentInfo.Role == AgentRoleSystem {
 		agentInfo.IsActive = true
@@ -57,6 +56,10 @@ func (m *Manager) Register(agentInstance *BasicAgent, agentInfo *AgentInfo) {
 		m.currentID = agentInfo.ID
 		logger.Info("业务Agent [%s] 已设为默认激活Agent", agentInfo.ID)
 	}
+
+	// 写入 Agent 信息表（必须在所有字段就位之后写入，确保 IsActive、Registered 已是最终值）
+	m.agentsInfo[agentInfo.ID] = *agentInfo
+	logger.Info("Agent [%s] 已注册到管理器", agentInfo.ID)
 }
 
 // ValidateSystemAgents 校验所有系统级Agent是否已成功注册

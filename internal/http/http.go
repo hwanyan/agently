@@ -87,11 +87,13 @@ func (h *HTTPService) Start() {
 		mux.HandleFunc("/api/agently/sessions", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessions())))
 		mux.HandleFunc("/api/agently/sessions/", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessionDetail())))
 		mux.HandleFunc("/api/agently/agents", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleAgents())))
+		mux.HandleFunc("/api/agently/tools", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleTools())))
 		mux.HandleFunc("/api/agently/switch", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSwitch())))
 	} else {
 		mux.HandleFunc("/api/agently/sessions", h.corsMiddleware(dbUnavailable))
 		mux.HandleFunc("/api/agently/sessions/", h.corsMiddleware(dbUnavailable))
 		mux.HandleFunc("/api/agently/agents", h.corsMiddleware(dbUnavailable))
+		mux.HandleFunc("/api/agently/tools", h.corsMiddleware(dbUnavailable))
 		mux.HandleFunc("/api/agently/switch", h.corsMiddleware(dbUnavailable))
 	}
 
@@ -182,6 +184,59 @@ func (h *HTTPService) handleAgents() http.HandlerFunc {
 		h.jsonResponse(w, http.StatusOK, map[string]interface{}{
 			"code":   0,
 			"agents": items,
+		})
+	}
+}
+
+// handleTools 获取所有可用工具列表（汇总所有非系统 Agent 的工具，按工具名去重）
+// GET /api/agently/tools
+// 返回字段仅包含展示层需要的 name/description/agent_ids；parameters（JSON Schema）是供 LLM 使用的内部细节，不对外暴露。
+func (h *HTTPService) handleTools() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			logger.Warning("非法请求方法: %s", r.Method)
+			h.jsonError(w, http.StatusMethodNotAllowed, "仅支持 GET 请求")
+			return
+		}
+
+		logger.Info("HTTP请求: 获取工具列表")
+
+		type ToolItem struct {
+			Name        string   `json:"name"`
+			Description string   `json:"description"`
+			AgentIDs    []string `json:"agent_ids"` // 哪些 Agent 拥有此工具
+		}
+
+		// 汇总所有非系统 Agent 的工具，按工具名去重
+		toolMap := make(map[string]*ToolItem)
+		for _, agentInfo := range h.manager.List() { // List() 已过滤掉系统 Agent
+			agentInstance, exists := h.manager.Get(agentInfo.ID)
+			if !exists {
+				continue
+			}
+			for _, tool := range agentInstance.GetTools() {
+				name := tool.Name()
+				if item, ok := toolMap[name]; ok {
+					item.AgentIDs = append(item.AgentIDs, agentInfo.ID)
+				} else {
+					toolMap[name] = &ToolItem{
+						Name:        name,
+						Description: tool.Description(),
+						AgentIDs:    []string{agentInfo.ID},
+					}
+				}
+			}
+		}
+
+		items := make([]ToolItem, 0, len(toolMap))
+		for _, item := range toolMap {
+			items = append(items, *item)
+		}
+
+		logger.Info("返回工具列表，共 %d 个工具", len(items))
+		h.jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"code":  0,
+			"tools": items,
 		})
 	}
 }
