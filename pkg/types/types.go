@@ -69,7 +69,9 @@ const (
 	StreamEventToolCall StreamEventType = "tool_call"
 	// StreamEventToolResult 工具调用结果事件
 	StreamEventToolResult StreamEventType = "tool_result"
-	// StreamEventError 错误事件
+	// StreamEventToolError 工具调用失败事件（非致命，LLM 仍可继续处理）
+	StreamEventToolError StreamEventType = "tool_error"
+	// StreamEventError 致命错误事件（整次对话无法继续）
 	StreamEventError StreamEventType = "error"
 )
 

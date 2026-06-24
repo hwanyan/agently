@@ -674,8 +674,28 @@ func (h *HTTPService) handleSessionDetail() http.HandlerFunc {
 					resultData, _ := json.Marshal(map[string]string{"tool_name": event.ToolName, "tool_result": event.ToolResult})
 					fmt.Fprintf(w, "event: tool_result\ndata: %s\n\n", string(resultData))
 					flusher.Flush()
+				case types.StreamEventToolError:
+					// 工具单次调用失败：非致命，作为警告事件下发，前端只展示徽章，不打断主流
+					errMsg := event.Error
+					if errMsg == "" {
+						errMsg = event.ToolResult
+					}
+					if errMsg == "" {
+						errMsg = "工具调用失败"
+					}
+					toolErrData, _ := json.Marshal(map[string]string{
+						"tool_name": event.ToolName,
+						"error":     errMsg,
+					})
+					fmt.Fprintf(w, "event: tool_error\ndata: %s\n\n", string(toolErrData))
+					flusher.Flush()
 				case types.StreamEventError:
-					errData, _ := json.Marshal(map[string]string{"error": event.Error})
+					// 致命错误：兜底保证 error 字段非空
+					errMsg := event.Error
+					if errMsg == "" {
+						errMsg = "未知错误"
+					}
+					errData, _ := json.Marshal(map[string]string{"error": errMsg})
 					fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errData))
 					flusher.Flush()
 				}

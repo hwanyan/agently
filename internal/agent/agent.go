@@ -397,11 +397,12 @@ func (a *BasicAgent) processToolCallsWithEvents(ctx context.Context, toolCalls [
 			errorMsg := fmt.Sprintf("工具 '%s' 不存在", toolCall.Function.Name)
 			logger.Error("工具调用失败: %s", errorMsg)
 			a.addToolMessage(toolCall.ID, errorMsg)
-			// 发送工具结果事件（失败）
+			// 工具单次失败属于非致命错误，LLM 仍可继续处理
 			eventStream <- types.StreamEvent{
-				Type:       types.StreamEventError,
+				Type:       types.StreamEventToolError,
 				ToolName:   toolCall.Function.Name,
 				ToolResult: errorMsg,
+				Error:      errorMsg,
 			}
 			continue
 		}
@@ -413,9 +414,10 @@ func (a *BasicAgent) processToolCallsWithEvents(ctx context.Context, toolCalls [
 			logger.Error("工具[%s]参数解析失败: %v", toolCall.Function.Name, err)
 			a.addToolMessage(toolCall.ID, errorMsg)
 			eventStream <- types.StreamEvent{
-				Type:       types.StreamEventError,
+				Type:       types.StreamEventToolError,
 				ToolName:   toolCall.Function.Name,
 				ToolResult: errorMsg,
+				Error:      errorMsg,
 			}
 			continue
 		}
@@ -427,9 +429,10 @@ func (a *BasicAgent) processToolCallsWithEvents(ctx context.Context, toolCalls [
 			logger.Error("工具[%s]执行失败: %v", toolCall.Function.Name, err)
 			a.addToolMessage(toolCall.ID, errorMsg)
 			eventStream <- types.StreamEvent{
-				Type:       types.StreamEventError,
+				Type:       types.StreamEventToolError,
 				ToolName:   toolCall.Function.Name,
 				ToolResult: errorMsg,
+				Error:      errorMsg,
 			}
 			continue
 		}
