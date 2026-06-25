@@ -73,11 +73,13 @@ func DiscoverAndCreateTools(ctx context.Context, client *Client) ([]*MCPTool, er
 
 	// 创建工具适配器
 	tools := make([]*MCPTool, 0, len(definitions))
+	log_string := ""
 	for _, def := range definitions {
 		tool := NewMCPTool(client, def)
 		tools = append(tools, tool)
-		logger.Info("已发现MCP工具: [%s] - %s", def.Name, def.Description)
+		log_string += def.Name + ", "
 	}
-
+	logger.Info("已发现MCP工具: [%d]个", len(tools))
+	logger.Info("MCP工具列表: [%s]", log_string)
 	return tools, nil
 }
