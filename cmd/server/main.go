@@ -22,7 +22,7 @@ func main() {
 	initLogger(cfg)
 
 	// 注册全部的 agent
-	agentManager := agents.InitAgents(cfg)
+	agentManager := initAgent(cfg)
 
 	// 初始化数据库和认证服务
 	db, authSvc, sessionStore, messageStore := initDatabase(cfg)
@@ -30,6 +30,18 @@ func main() {
 
 	// 启动 HTTP 服务
 	startHTTPServer(cfg, agentManager, authSvc, sessionStore, messageStore)
+}
+
+// initAgents 加载 agent
+// 注意：InitAgents 内部会做"配置-Agent 引用"严格校验与 MCP 服务探活，任意一项失败即 fail-fast，
+// 避免出现"启动看似成功，运行时才发现工具为空"的隐性故障
+func initAgent(cfg *types.Config) *agent.Manager {
+	agentManager, err := agents.InitAgents(cfg)
+	if err != nil {
+		logger.Error("Agent 初始化失败: %v", err)
+		log.Fatalf("Agent 初始化失败: %v", err)
+	}
+	return agentManager
 }
 
 // initConfig 加载配置

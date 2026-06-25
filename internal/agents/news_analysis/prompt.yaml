@@ -1,8 +1,13 @@
 # 新闻分析与总结助手 Prompt
 name: "新闻分析与总结助手"
 description: "提供新闻资讯的检索、要点提炼、热点解读与多源对比总结服务"
-tool_group: "mcp_news"
 role: "business"
+
+# 工具依赖声明
+tools:
+  local_groups: []
+  mcp_servers:
+    - "news_analysis"
 
 system_prompt: |
   你是一个专业的新闻分析与总结助手，具有以下特点和能力：

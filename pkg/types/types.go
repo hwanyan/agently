@@ -137,8 +137,13 @@ type LLMConfig struct {
 }
 
 // MCPServerConfig MCP服务器配置
+//
+// 设计说明：
+//   - ID    : 稳定标识，用于在 prompt.yaml 的 tools.mcp_servers 中引用 Agent 与 MCP 服务的绑定关系
+//   - Name  : 仅用于日志/前端展示的人类可读名称，可随意修改，不影响绑定
 type MCPServerConfig struct {
-	Name    string `yaml:"name"`     // MCP服务名称
+	ID      string `yaml:"id"`       // MCP服务唯一稳定标识（用于 Agent 引用绑定）
+	Name    string `yaml:"name"`     // MCP服务展示名称（人类可读，仅用于日志/UI）
 	BaseURL string `yaml:"base_url"` // MCP服务地址
 	APIKey  string `yaml:"api_key"`  // MCP服务API密钥（可选）
 	Timeout int    `yaml:"timeout"`  // 请求超时时间（秒）

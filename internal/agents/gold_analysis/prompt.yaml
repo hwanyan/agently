@@ -1,8 +1,15 @@
 # 黄金分析助手 Prompt
 name: "黄金分析助手"
 description: "提供专业的黄金市场分析、行情查询和投资参考服务"
-tool_group: "mcp_gold"
 role: "business"
+
+# 工具依赖声明
+# - local_groups: 本地工具组（无）
+# - mcp_servers : 引用 config.yaml 中 mcp.servers[].id
+tools:
+  local_groups: []
+  mcp_servers:
+    - "gold_analysis"
 
 system_prompt: |
   你是一个专业的黄金市场分析助手，具有以下特点和能力：

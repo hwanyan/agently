@@ -282,12 +282,24 @@ const (
 
 // AgentInfo Agent信息（用于展示）
 type AgentInfo struct {
-	ID          string    // Agent唯一标识
-	Name        string    // Agent显示名称
-	Description string    // Agent描述
-	ToolGroup   string    // 工具组标识（如 general, mcp_gold, none）
-	Prompt      string    // Agent提示词
-	Role        AgentRole // Agent角色：system（系统级）或 business（业务级）
-	IsActive    bool      // 是否为当前激活的Agent
-	Registered  bool      // 是否已注册
+	ID          string     // Agent唯一标识
+	Name        string     // Agent显示名称
+	Description string     // Agent描述
+	Tools       AgentTools // Agent 工具配置（声明本 Agent 依赖的本地工具组与 MCP 服务）
+	Prompt      string     // Agent提示词
+	Role        AgentRole  // Agent角色：system（系统级）或 business（业务级）
+	IsActive    bool       // 是否为当前激活的Agent
+	Registered  bool       // 是否已注册
+}
+
+// AgentTools Agent 的工具依赖声明
+//
+// 设计说明：
+//   - 一个 Agent 可同时依赖任意数量的本地工具组与任意数量的 MCP 服务
+//   - LocalGroups 中的元素是本地工具组标识（例如 "general"），由 internal/tools/local 中的注册表识别
+//   - MCPServers  中的元素是 MCPServerConfig.ID，启动期会做严格的"引用-存在性"校验，
+//     找不到对应配置或服务不可达将直接 fail-fast，避免运行时静默降级
+type AgentTools struct {
+	LocalGroups []string `yaml:"local_groups"` // 本地工具组列表
+	MCPServers  []string `yaml:"mcp_servers"`  // MCP 服务 ID 列表（对应 cfg.MCP.Servers[].ID）
 }

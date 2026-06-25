@@ -55,13 +55,19 @@ tools:
     base_url: "https://libretranslate.com"
 
 # MCP 工具配置
+#
+# 设计说明：
+#   - id   ：稳定标识，被 Agent 的 prompt.yaml 中 tools.mcp_servers 引用，**不要随意修改**
+#   - name ：仅用于日志/前端展示，可随意修改，不会影响绑定关系
 mcp:
   servers:
-    - name: "gold-analysis-mcp-server"
+    - id: "gold_analysis"
+      name: "黄金分析 MCP 服务"
       base_url: "http://localhost:9090"
       api_key: ""
-      timeout: 30
-    - name: "news-analysis-mcp-server"
+      timeout: 60
+    - id: "news_analysis"
+      name: "新闻分析 MCP 服务"
       base_url: "http://localhost:9091"
       api_key: ""
-      timeout: 30
+      timeout: 60

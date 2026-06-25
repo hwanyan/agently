@@ -1,8 +1,13 @@
 # 意图路由 Agent Prompt
 name: "意图路由助手"
 description: "自动分析用户意图并路由到合适的专业Agent处理"
-tool_group: "none"
 role: "system"
+
+# 工具依赖声明
+# 路由 Agent 不需要任何工具
+tools:
+  local_groups: []
+  mcp_servers: []
 
 system_prompt: |
   你是一个意图路由系统，你的唯一职责是分析用户的输入，判断应该由哪个专业Agent来处理。
