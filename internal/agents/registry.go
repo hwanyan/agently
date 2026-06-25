@@ -119,7 +119,6 @@ func InitAgents(cfg *types.Config) *agent.Manager {
 				"AGENTS_SECTION": agentsDescription,
 			})
 		}
-
 		// 创建 Agent 实例（具有 llm 的 Agent）
 		agentInstance := agent.NewBasicAgent(agentInfo.Name, agentInfo.Description, llmClient, agentInfo.Prompt)
 		// 根据工具组注册工具
@@ -139,8 +138,9 @@ func registerTools(aiAgent *agent.BasicAgent, toolGroup string, cfg *types.Confi
 	case "mcp_gold":
 		// 为 agent 设置 MCP 工具时需要将 toolGroup 参数设置为在配置文件中指定 MCP 服务的 name
 		tools.SetupMCPTools(aiAgent, cfg, "gold-analysis-mcp-server")
+	case "mcp_news":
+		tools.SetupMCPTools(aiAgent, cfg, "news-analysis-mcp-server")
 	case "none":
-		// 系统Agent不需要工具
 	default:
 		logger.Warning("未知的工具组 [%s]，跳过工具注册", toolGroup)
 	}

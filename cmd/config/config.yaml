@@ -61,3 +61,7 @@ mcp:
       base_url: "http://localhost:9090"
       api_key: ""
       timeout: 30
+    - name: "news-analysis-mcp-server"
+      base_url: "http://localhost:9091"
+      api_key: ""
+      timeout: 30
