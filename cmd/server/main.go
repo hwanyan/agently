@@ -3,7 +3,6 @@ package main
 
 import (
 	"log"
-	"os"
 
 	"github.com/hwanyan/agently/internal/agent"
 	"github.com/hwanyan/agently/internal/agents"
@@ -37,9 +36,8 @@ func main() {
 func initConfig() *types.Config {
 	cfg, err := config.LoadConfiguration()
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
 		logger.Error("加载配置失败: %v", err)
-		os.Exit(0)
+		log.Fatalf("加载配置失败: %v", err)
 	}
 	return cfg
 }
@@ -47,9 +45,8 @@ func initConfig() *types.Config {
 // initLogger 初始化日志系统
 func initLogger(cfg *types.Config) {
 	if err := logger.Init(cfg.Log.FilePath); err != nil {
-		log.Fatalf("初始化日志系统失败: %v", err)
 		logger.Error("初始化日志系统失败: %v", err)
-		os.Exit(0)
+		log.Fatalf("初始化日志系统失败: %v", err)
 	}
 	logger.Info("Agently 系统启动")
 }
@@ -64,20 +61,17 @@ func initDatabase(cfg *types.Config) (db *store.DB, authSvc *auth.Service,
 	sessionStore *store.SessionStore, messageStore *store.MessageStore) {
 	var err error
 	if cfg.Database.DSN == "" {
-		log.Fatalf("未配置数据库 DSN，服务启动失败")
 		logger.Error("未配置数据库 DSN，服务启动失败")
-		os.Exit(0)
+		log.Fatalf("未配置数据库 DSN，服务启动失败")
 	}
 	db, err = store.New(cfg.Database)
 	if err != nil {
-		log.Fatalf("数据库连接失败: %v", err)
 		logger.Error("数据库连接失败: %v", err)
-		os.Exit(0)
+		log.Fatalf("数据库连接失败: %v", err)
 	}
 	if cfg.SMTP.Host == "" {
-		log.Fatalf("SMTP 未配置，邮箱验证服务无法启动，请在配置文件中填写 SMTP 配置")
 		logger.Error("SMTP 未配置，邮箱验证服务无法启动，请在配置文件中填写 SMTP 配置")
-		os.Exit(0)
+		log.Fatalf("SMTP 未配置，邮箱验证服务无法启动，请在配置文件中填写 SMTP 配置")
 	}
 
 	userStore := store.NewUserStore(db)
@@ -90,7 +84,6 @@ func initDatabase(cfg *types.Config) (db *store.DB, authSvc *auth.Service,
 	authSvc = auth.NewService(userStore, cfg.JWT, emailVerifySvc)
 	logger.Info("数据库连接成功，认证服务已初始化")
 
-	logger.Info("数据库初始化完成")
 	return db, authSvc, sessionStore, messageStore
 }
 

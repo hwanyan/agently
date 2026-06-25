@@ -8,8 +8,8 @@ log:
 
 # HTTP 服务配置
 http:
-  port: 8080
-  host: "0.0.0.0"
+  port: 8080      # 服务端口号
+  host: "0.0.0.0" # 服务监听的主机地址（所有主机）
 
 # 数据库配置（PostgreSQL）
 database:

@@ -13,17 +13,6 @@ import (
 	"github.com/hwanyan/agently/pkg/types"
 )
 
-// initLLM 初始化 LLM 客户端
-func initLLM(cfg *types.Config) types.LLMClient {
-	llmClient := llm.NewOpenAIClient(
-		cfg.LLM.APIKey,
-		cfg.LLM.Model,
-		cfg.LLM.BaseURL,
-	)
-	logger.Info("LLM 客户端创建成功")
-	return llmClient
-}
-
 // initPromptMapping 构建项目中全部 agent 与其对应的基本信息的映射关系
 // 即 { key(agent_id) : value(AgentInfo[name, description, prompt]) }
 // 约定：agents/<agent_id>/prompt.yaml，目录名 = Agent ID
@@ -114,7 +103,7 @@ func InitAgents(cfg *types.Config) *agent.Manager {
 	m := agent.NewManager()
 
 	// 创建 LLM 客户端
-	llmClient := initLLM(cfg)
+	llmClient := llm.NewClientFromConfig(cfg)
 
 	// 构建 agent 的 prompt 映射（从编译时嵌入的 embed.FS 加载）
 	prompts := initPromptMapping()

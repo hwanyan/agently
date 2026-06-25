@@ -51,66 +51,43 @@ func (h *HTTPService) Start() {
 		host = "0.0.0.0"
 	}
 	port := h.config.HTTP.Port
-	if port == 0 {
-		port = 8088
-	}
 	addr := fmt.Sprintf("%s:%d", host, port)
+
+	// 防御性检查：核心依赖必须就绪。鉴权、会话、消息存储均为业务核心，
+	// 任一缺失都视为致命错误，直接终止进程
+	if h.authSvc == nil || h.sessionStore == nil || h.messageStore == nil {
+		logger.Error("HTTP服务启动失败: 关键依赖未初始化（authSvc/sessionStore/messageStore）")
+		log.Fatalf("HTTP服务启动失败: 关键依赖未初始化（authSvc/sessionStore/messageStore）")
+	}
 
 	// 注册路由
 	mux := http.NewServeMux()
 
-	// dbUnavailable 返回一个数据库不可用时的 503 兜底 Handler
-	dbUnavailable := func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		h.jsonError(w, http.StatusServiceUnavailable, "数据库服务不可用，请稍后重试")
-	}
-
 	// 认证相关路由（无需鉴权）
-	if h.authSvc != nil {
-		mux.HandleFunc("/api/agently/auth/register", h.corsMiddleware(h.handleRegister()))
-		mux.HandleFunc("/api/agently/auth/login", h.corsMiddleware(h.handleLogin()))
-		mux.HandleFunc("/api/agently/auth/send-code", h.corsMiddleware(h.handleSendVerifyCode()))
-	} else {
-		mux.HandleFunc("/api/agently/auth/register", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/agently/auth/login", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/agently/auth/send-code", h.corsMiddleware(dbUnavailable))
-	}
+	mux.HandleFunc("/api/agently/auth/register", h.corsMiddleware(h.handleRegister()))
+	mux.HandleFunc("/api/agently/auth/login", h.corsMiddleware(h.handleLogin()))
+	mux.HandleFunc("/api/agently/auth/send-code", h.corsMiddleware(h.handleSendVerifyCode()))
 
 	// 会话相关路由（需要鉴权）
-	if h.authSvc != nil && h.sessionStore != nil && h.messageStore != nil {
-		mux.HandleFunc("/api/agently/sessions", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessions())))
-		mux.HandleFunc("/api/agently/sessions/", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessionDetail())))
-		mux.HandleFunc("/api/agently/agents", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleAgents())))
-		mux.HandleFunc("/api/agently/tools", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleTools())))
-		mux.HandleFunc("/api/agently/switch", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSwitch())))
-	} else {
-		mux.HandleFunc("/api/agently/sessions", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/agently/sessions/", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/agently/agents", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/agently/tools", h.corsMiddleware(dbUnavailable))
-		mux.HandleFunc("/api/agently/switch", h.corsMiddleware(dbUnavailable))
-	}
+	mux.HandleFunc("/api/agently/sessions", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessions())))
+	mux.HandleFunc("/api/agently/sessions/", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSessionDetail())))
+	mux.HandleFunc("/api/agently/agents", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleAgents())))
+	mux.HandleFunc("/api/agently/tools", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleTools())))
+	mux.HandleFunc("/api/agently/switch", h.corsMiddleware(middleware.AuthMiddleware(h.authSvc, h.handleSwitch())))
 
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second, // 流式响应需要较长的写超时
+		WriteTimeout: 300 * time.Second, // 流式响应需要较长的写超时
 		IdleTimeout:  60 * time.Second,
 	}
 
 	logger.Info("HTTP服务启动，监听地址: %s", addr)
-	fmt.Printf("\n🌐 HTTP 服务已启动: http://%s\n", addr)
 
 	if err := server.ListenAndServe(); err != nil {
 		logger.Error("HTTP服务启动失败: %v", err)
-		log.Printf("❌ HTTP服务启动失败: %v", err)
+		log.Fatalf("HTTP服务启动失败: %v", err)
 	}
 }
 
