@@ -28,7 +28,8 @@ info:
     | Agent ID | 名称 | 功能描述 |
     |----------|------|----------|
     | `general` | 通用工具助手 | 天气查询、IP查询、翻译、二维码生成、文本处理、短链接生成 |
-    | `gold_analysis` | 黄金分析助手 | 专业黄金市场分析、行情查询、投资参考 |
+    | `gold_analysis` | 黄金分析助手 | 专业黄金市场分析、行情查询、技术指标、宏观数据（MCP 工具） |
+    | `news_analysis` | 新闻分析与总结助手 | 新闻检索、要点提炼、热点解读、多源对比总结（MCP 工具） |
 
     > 注意: 还有一个 `intention_router`（意图路由助手）是系统级 Agent，不对外暴露，不可切换。
 
@@ -69,6 +70,11 @@ paths:
                   - id: "gold_analysis"
                     name: "黄金分析助手"
                     description: "提供专业的黄金市场分析、行情查询和投资参考服务"
+                    is_active: false
+                    registered: true
+                  - id: "news_analysis"
+                    name: "新闻分析与总结助手"
+                    description: "提供新闻资讯的检索、要点提炼、热点解读与多源对比总结服务"
                     is_active: false
                     registered: true
 

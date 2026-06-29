@@ -25,6 +25,7 @@
 | 1 | `intention_router` | 意图路由助手 | 系统Agent | 自动分析用户意图，路由到合适的专业Agent |
 | 2 | `general` | 通用工具助手 | 业务Agent | 天气、翻译、IP查询、二维码等通用服务 |
 | 3 | `gold_analysis` | 黄金分析助手 | 业务Agent | 专业黄金市场分析、行情查询（MCP工具） |
+| 4 | `news_analysis` | 新闻分析与总结助手 | 业务Agent | 新闻检索、要点提炼、热点解读、多源对比（MCP工具） |
 
 ## 📦 内置工具
 
@@ -39,9 +40,9 @@
 | 5 | `textprocessor` ✏️ | 文本统计、格式转换、内容提取、文本生成 | 本地处理 |
 | 6 | `shorturl` 🔗 | 长 URL 转短链接（TinyURL / is.gd / v.gd） | 第三方短链接服务 |
 
-### MCP工具（gold_analysis Agent）
+### MCP 工具（gold_analysis / news_analysis 等业务 Agent）
 
-通过 MCP 协议从远程服务器动态发现，具体工具取决于 MCP 服务端提供的能力。
+通过 MCP 协议从远程服务器动态发现，具体工具取决于 MCP 服务端提供的能力。Agent 与 MCP 服务的绑定通过 `prompt.yaml` 中的 `tools.mcp_servers` 引用 `config.yaml` 的 `mcp.servers[].id` 完成。
 
 ## 🏗️ 项目结构
 
@@ -57,11 +58,14 @@ agently/
 │   │   ├── agent.go                      # Agent 核心引擎（对话循环、工具调用、并发控制）
 │   │   └── manager.go                    # Agent 管理器（切换、意图路由、列表查询）
 │   ├── agents/                           # 🆕 Agent 定义层（统一注册 + 各 Agent 的 Prompt）
-│   │   ├── registry.go                   # Agent 统一编排（初始化、注册、工具绑定、Prompt 加载）
+│   │   ├── embed.go                      # 通过 embed.FS 嵌入所有 prompt.yaml 到二进制
+│   │   ├── registry.go                   # Agent 统一编排（解析 prompt、配置校验、MCP 探活、工具注入）
 │   │   ├── general/
-│   │   │   └── prompt.yaml               # 通用工具助手 Prompt（含 name/description/role/tool_group）
+│   │   │   └── prompt.yaml               # 通用工具助手 Prompt（含 name/description/role/tools/system_prompt）
 │   │   ├── gold_analysis/
-│   │   │   └── prompt.yaml               # 黄金分析助手 Prompt
+│   │   │   └── prompt.yaml               # 黄金分析助手 Prompt（依赖 mcp_servers: [gold_analysis]）
+│   │   ├── news_analysis/
+│   │   │   └── prompt.yaml               # 新闻分析助手 Prompt（依赖 mcp_servers: [news_analysis]）
 │   │   └── intention_router/
 │   │       └── prompt.yaml               # 意图路由 Agent Prompt
 │   ├── auth/
@@ -480,8 +484,15 @@ mkdir internal/agents/my_agent
 # internal/agents/my_agent/prompt.yaml
 name: "我的Agent"
 description: "Agent功能描述"
-tool_group: "general"   # 工具组：general / mcp_gold / none
 role: "business"        # 角色：system（系统级）/ business（业务级）
+
+# 工具依赖声明（方案 B）
+# - local_groups : 引用 internal/tools/local 中按组注册的本地工具组
+# - mcp_servers  : 引用 config.yaml 中 mcp.servers[].id
+tools:
+  local_groups:
+    - "general"          # 例：使用本地通用工具组
+  mcp_servers: []        # 例：不依赖任何 MCP 服务（如需要则填 server id 列表）
 
 system_prompt: |
   你是一个专业的...
@@ -491,10 +502,11 @@ system_prompt: |
 
 > **约定说明**：
 > - 目录名即为 Agent ID（如 `my_agent`）
-> - `prompt.yaml` 中必须包含 `name`、`description`、`tool_group`、`role`、`system_prompt` 五个字段
+> - `prompt.yaml` 中必须包含 `name`、`description`、`role`、`tools`、`system_prompt` 五个字段
+> - `tools.local_groups` 与 `tools.mcp_servers` 可同时声明，一个 Agent 可混合使用本地工具组与多个 MCP 服务
 > - 工具信息无需写入 Prompt，系统通过 OpenAI function calling 机制自动将已注册工具传递给 LLM
 > - 路由 Agent（`intention_router`）的 Prompt 中可使用 `{{AGENTS_SECTION}}` 模板变量，系统会自动替换为所有业务 Agent 的列表描述
-> - 无需修改 `config.yaml`、无需修改任何 Go 代码
+> - 无需修改任何 Go 代码；如声明了 `mcp_servers`，需在 `config.yaml` 的 `mcp.servers` 中确保对应 `id` 已配置（启动期会做严格的引用-存在性校验与 MCP 服务探活，任一失败即 fail-fast）
 
 ### 添加新的本地工具（插件化）
 
@@ -528,12 +540,12 @@ func (t *MyTool) Execute(ctx context.Context, args map[string]interface{}) (stri
 }
 ```
 
-2. **完成！** 工具会在启动时通过 `init()` 自动注册到全局注册表，`SetupGeneralTools` 会自动发现并加载。
+2. **完成！** 工具会在启动时通过 `init()` 自动注册到全局注册表，`SetupLocalToolGroup` 会按 Agent `prompt.yaml` 中声明的 `tools.local_groups` 自动发现并加载。
 
 > **工具注册机制说明**：
-> - `local/register.go` 维护全局工具注册表，提供 `Register(group, factory)` 和 `GetToolsByGroup(group, cfg)` 两个核心函数
+> - `local/registry.go` 维护全局工具注册表，提供 `Register(group, factory)` 和 `GetToolsByGroup(group, cfg)` 两个核心函数
 > - 每个工具文件通过 `init()` 调用 `Register` 将自己的工厂函数注册到对应的工具组
-> - `setup.go` 中的 `SetupGeneralTools` 调用 `GetToolsByGroup("general", cfg)` 自动获取所有工具并注册到 Agent
+> - `setup.go` 中的 `SetupLocalToolGroup(aiAgent, cfg, group)` 调用 `GetToolsByGroup(group, cfg)` 自动获取所有工具并注册到 Agent
 > - 工具信息通过 OpenAI function calling 的 `tools` 参数传递给 LLM，无需在 Prompt 中手动描述
 
 ### 接入MCP工具服务
@@ -542,18 +554,28 @@ func (t *MyTool) Execute(ctx context.Context, args map[string]interface{}) (stri
    - `tools/list` — 返回可用工具列表
    - `tools/call` — 执行工具调用
 
-2. 在 `config.yaml` 的 `mcp.servers` 中添加服务配置：
+2. 在 `config.yaml` 的 `mcp.servers` 中添加服务配置（**`id` 必填且需全局唯一**）：
 
 ```yaml
 mcp:
   servers:
-    - name: "my-mcp-server"
+    - id: "my_mcp"                      # 稳定标识，被 prompt.yaml 引用
+      name: "我的 MCP 服务"               # 仅用于日志/UI 展示
       base_url: "http://127.0.0.1:9090/mcp"
       api_key: ""
-      timeout: 30
+      timeout: 60
 ```
 
-3. 在新 Agent 的 `prompt.yaml` 中指定 `tool_group: "mcp_gold"`（或自定义工具组）。
+3. 在新 Agent 的 `prompt.yaml` 中通过 `tools.mcp_servers` 声明依赖（值必须与 `config.yaml` 中的 `mcp.servers[].id` 完全一致）：
+
+```yaml
+tools:
+  local_groups: []
+  mcp_servers:
+    - "my_mcp"
+```
+
+> **fail-fast 校验**：启动时若 `prompt.yaml` 中引用的 `id` 在 `config.yaml` 中不存在，或对应的 MCP 服务无法 ListTools 探活，进程会直接退出并打印明确的错误原因，避免运行时静默降级。
 
 ### 切换 LLM 提供商
 
