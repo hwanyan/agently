@@ -474,6 +474,13 @@ paths:
         在指定会话中发送消息，AI 回复通过 SSE 流式返回，**消息自动持久化到数据库**。
         与 `/api/agently/sessions/{id}/chat` 的区别：消息会存入数据库，刷新页面后历史不丢失。
         SSE 事件格式与会话聊天接口完全相同（route → message × N → done）。
+
+        ### 会话 Agent 自动同步
+        当 `auto_route: true` 时，如果路由命中的 Agent 与会话当前 `agent_id` 不同，
+        后端会同步更新会话的 `agent_id`（仅对 `status=1` 活跃会话生效）。
+        前端再次拉取会话列表时会看到 `agent_id` 已变更，可据此把会话归类到对应的 Agent 分组。
+        当 `auto_route: false`（手动模式）时，会话 `agent_id` 不会被自动修改。
+
         **请求头**: `Authorization: Bearer <token>`
       security:
         - BearerAuth: []
@@ -736,7 +743,10 @@ components:
           example: "550e8400-e29b-41d4-a716-446655440000"
         agent_id:
           type: string
-          description: 绑定的 Agent ID
+          description: |
+            绑定的 Agent ID。
+            在自动路由模式下（chat 接口 `auto_route: true`），若路由命中的 Agent 与当前值不同，
+            后端会同步更新该字段（仅对 `status=1` 活跃会话生效）；手动模式不会自动修改。
           example: "general"
         title:
           type: string

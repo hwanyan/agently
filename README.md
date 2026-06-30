@@ -6,6 +6,7 @@
 
 - 🤖 **多Agent架构** — 启动时注册全部Agent，支持按需切换
 - 🔀 **意图自动路由** — 内置路由Agent（intention_router），自动分析用户意图并分发到合适的专业Agent
+- 🔁 **会话 Agent 自动同步** — 自动路由命中与会话当前 `agent_id` 不一致时，后端会同步更新会话的主 Agent，前端按 Agent 分类时可正确归组
 - 🔧 **自动工具调用** — Agent 自动识别意图并调用外部工具完成任务
 - 🌊 **流式响应** — 支持流式输出，实时展示 AI 回答，流式模式下同样支持工具调用
 - 🔌 **MCP协议支持** — 通过 Model Context Protocol 动态发现和调用远程工具服务
@@ -303,6 +304,8 @@ data: {"content": "北京今天"}
 event: done
 data: {}
 ```
+
+> **会话 Agent 自动同步**：在自动路由模式下（`auto_route: true`），若路由命中的 Agent 与会话当前 `agent_id` 不同，后端会调用 `SessionStore.UpdateAgentID` 同步会话的主 Agent（仅对 `status=1` 活跃会话生效）。前端在下次拉取会话列表或会话详情时，会看到 `agent_id` 已更新，从而归类到正确的 Agent 分组（例如新闻类问题归入"新闻与总结"）。
 
 > 详细接口文档见 `API_DOC.yaml`（OpenAPI 3.0 格式）。
 
@@ -614,6 +617,7 @@ llm:
 10. **路由Agent**：`intention_router` 是系统Agent，不对外展示，不可手动切换到该Agent
 11. **消息字段**：持久化消息中工具调用列表字段名为 `tool_call_list`（JSON 序列化后的字符串）
 12. **验证码频率限制**：同一邮箱 60 秒内只能发送一次验证码，验证码有效期 5 分钟
+13. **会话 Agent 同步**：自动路由模式下，会话的 `agent_id` 会随路由结果发生变化（仅对 `status=1` 活跃会话生效）；手动模式（`auto_route: false`）不会触发同步
 
 ## 📄 许可证
 
