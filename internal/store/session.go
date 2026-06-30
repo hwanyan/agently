@@ -166,6 +166,27 @@ func (s *SessionStore) UpdateTitle(id, userID, title string) error {
 	return nil
 }
 
+// UpdateAgentID 更新会话所属的 Agent ID
+// 用于自动路由场景：当本次消息被路由到的 Agent 与会话当前 agent_id 不一致时，
+// 同步会话的主 Agent，便于前端按 Agent 分类时归到正确分组。
+func (s *SessionStore) UpdateAgentID(id, userID, agentID string) error {
+	if agentID == "" {
+		return fmt.Errorf("agentID 不能为空")
+	}
+	result, err := s.db.Exec(
+		`UPDATE sessions SET agent_id = $1 WHERE id = $2 AND user_id = $3 AND status = 1`,
+		agentID, id, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("更新会话Agent失败: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("会话不存在或无权限")
+	}
+	return nil
+}
+
 // Archive 归档会话（软删除）
 func (s *SessionStore) Archive(id, userID string) error {
 	result, err := s.db.Exec(

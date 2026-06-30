@@ -583,6 +583,17 @@ func (h *HTTPService) handleSessionDetail() http.HandlerFunc {
 
 			logger.Info("路由信息: %s", routeInfo)
 
+			// 若路由结果与会话当前 agent_id 不一致，同步更新会话的主 Agent，
+			// 让前端按 Agent 分类时能归到正确的分组（例如新闻类问题归到"新闻与总结"）。
+			if routedAgentID != "" && routedAgentID != session.AgentID {
+				if err := h.sessionStore.UpdateAgentID(sessionID, userID, routedAgentID); err != nil {
+					logger.Warning("同步会话Agent失败: %v", err)
+				} else {
+					logger.Info("会话Agent已同步: %s → %s", session.AgentID, routedAgentID)
+					session.AgentID = routedAgentID
+				}
+			}
+
 			// 设置 SSE 响应头
 			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
