@@ -185,10 +185,18 @@ type ToolsConfig struct {
 	ShortURL  ShortURLConfig  `yaml:"short_url"` // 短链接工具配置
 }
 
-// HTTPConfig HTTP服务配置
+// HTTPConfig HTTP服务配置（grpc-gateway 对外暴露的 REST/SSE 网关）
 type HTTPConfig struct {
 	Port int    `yaml:"port"` // HTTP服务端口
 	Host string `yaml:"host"` // HTTP服务监听地址
+}
+
+// GRPCConfig gRPC 服务配置
+//
+// gRPC 是系统的核心服务层，HTTP 网关（grpc-gateway）会在本机反向代理到该端口。
+type GRPCConfig struct {
+	Port int    `yaml:"port"` // gRPC 服务端口（默认 HTTP.Port + 1）
+	Host string `yaml:"host"` // 仅监听回环
 }
 
 // LogConfig 日志配置
@@ -199,7 +207,8 @@ type LogConfig struct {
 // Config 应用程序总配置
 type Config struct {
 	Log      LogConfig      `yaml:"log"`      // 日志配置
-	HTTP     HTTPConfig     `yaml:"http"`     // HTTP服务配置
+	HTTP     HTTPConfig     `yaml:"http"`     // HTTP服务配置（grpc-gateway 网关）
+	GRPC     GRPCConfig     `yaml:"grpc"`     // gRPC服务配置
 	Database DatabaseConfig `yaml:"database"` // 数据库配置
 	JWT      JWTConfig      `yaml:"jwt"`      // JWT 配置
 	SMTP     SMTPConfig     `yaml:"smtp"`     // SMTP 邮件配置

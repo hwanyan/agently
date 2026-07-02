@@ -2,8 +2,11 @@
 
 一个基于 Go 实现的多 Agent AI 系统，支持**意图自动路由**、流式对话、自动工具调用、MCP 协议集成、日志系统和灵活的 YAML 配置管理。
 
+> 🔄 **架构升级（gRPC 化重构）**：自本版本起，系统的路由层已全面收敛到 **gRPC**。所有对外能力以 gRPC 服务（`.proto`）定义，并通过 **grpc-gateway** 在同一 HTTP 端口反向代理，**对外的 REST 路径与 SSE 事件格式保持完全兼容**。详见 [gRPC 架构与迁移说明](#-grpc-架构与迁移说明)。
+
 ## ✨ 核心特性
 
+- 🚀 **gRPC 优先** — 全部路由以 gRPC 服务定义（Protobuf 契约），grpc-gateway 同步暴露兼容旧版的 REST + SSE
 - 🤖 **多Agent架构** — 启动时注册全部Agent，支持按需切换
 - 🔀 **意图自动路由** — 内置路由Agent（intention_router），自动分析用户意图并分发到合适的专业Agent
 - 🔁 **会话 Agent 自动同步** — 自动路由命中与会话当前 `agent_id` 不一致时，后端会同步更新会话的主 Agent，前端按 Agent 分类时可正确归组
@@ -17,7 +20,7 @@
 - 🔑 **用户认证** — JWT 鉴权，支持注册/登录，所有业务接口均需登录态
 - 📧 **邮箱验证** — 注册时强制邮箱验证码校验，SMTP 发送验证码，防止恶意注册
 - 🗄️ **会话持久化** — 对话历史存储到 PostgreSQL，刷新页面后可完整恢复
-- 🌐 **HTTP API** — 提供完整的 RESTful + SSE 接口，支持前端接入
+- 🌐 **gRPC 内核 + HTTP 网关** — 业务以 gRPC 实现并默认仅监听回环，由 grpc-gateway 统一对外提供 RESTful + SSE，前端零改造接入
 
 ## 🤖 内置Agent
 
@@ -51,71 +54,64 @@
 agently/
 ├── cmd/
 │   ├── config/
-│   │   └── config.yaml                  # 统一配置文件（YAML）
+│   │   └── config.yaml                  # 统一配置文件（YAML，含 http 网关端口与 grpc 端口）
 │   └── server/
 │       └── main.go                       # 程序入口（精简，仅负责启动编排）
+├── pb/                                   # 🆕 gRPC 契约与生成代码
+│   ├── proto/
+│   │   └── agently.proto                 # 原生 proto：全部 gRPC 服务契约（Auth/Agent/Session，含 Chat 流式）
+│   ├── gen/                              # protoc 生成产物（仅生成代码，勿手改）
+│   │   ├── agently.pb.go                 # 消息类型
+│   │   ├── agently_grpc.pb.go            # gRPC 服务端/客户端桩代码
+│   │   ├── agently.pb.gw.go              # grpc-gateway 反向代理（REST 映射）
+│   │   └── agently.swagger.json          # 🆕 由 proto 自动生成的 OpenAPI(swagger) 文档
+│   ├── api/google/api/                   # 供 protoc 本地解析的 google.api HTTP 注解（annotations/http.proto）
+│   └── gen.sh                            # 🆕 一键生成脚本（protoc + go/go-grpc/grpc-gateway/openapiv2 插件）
 ├── internal/
 │   ├── agent/
 │   │   ├── agent.go                      # Agent 核心引擎（对话循环、工具调用、并发控制）
 │   │   └── manager.go                    # Agent 管理器（切换、意图路由、列表查询）
-│   ├── agents/                           # 🆕 Agent 定义层（统一注册 + 各 Agent 的 Prompt）
+│   ├── agents/                           # Agent 定义层（统一注册 + 各 Agent 的 Prompt）
 │   │   ├── embed.go                      # 通过 embed.FS 嵌入所有 prompt.yaml 到二进制
 │   │   ├── registry.go                   # Agent 统一编排（解析 prompt、配置校验、MCP 探活、工具注入）
-│   │   ├── general/
-│   │   │   └── prompt.yaml               # 通用工具助手 Prompt（含 name/description/role/tools/system_prompt）
-│   │   ├── gold_analysis/
-│   │   │   └── prompt.yaml               # 黄金分析助手 Prompt（依赖 mcp_servers: [gold_analysis]）
-│   │   ├── news_analysis/
-│   │   │   └── prompt.yaml               # 新闻分析助手 Prompt（依赖 mcp_servers: [news_analysis]）
-│   │   └── intention_router/
-│   │       └── prompt.yaml               # 意图路由 Agent Prompt
+│   │   ├── general/prompt.yaml           # 通用工具助手 Prompt
+│   │   ├── gold_analysis/prompt.yaml     # 黄金分析助手 Prompt（依赖 mcp_servers: [gold_analysis]）
+│   │   ├── news_analysis/prompt.yaml     # 新闻分析助手 Prompt（依赖 mcp_servers: [news_analysis]）
+│   │   └── intention_router/prompt.yaml  # 意图路由 Agent Prompt
 │   ├── auth/
 │   │   ├── auth.go                       # 用户认证服务（注册、登录、JWT 签发与验证）
-│   │   ├── email_verify.go               # 邮箱验证业务编排（频率限制、生成验证码、模板渲染、调度）
-│   │   └── mailer.go                     # SMTP 邮件发送器（协议层，自动 TLS/STARTTLS，分步握手日志）
+│   │   ├── email_verify.go               # 邮箱验证业务编排
+│   │   └── mailer.go                     # SMTP 邮件发送器
 │   ├── config/
 │   │   └── config.go                     # 配置加载与验证
-│   ├── llm/
-│   │   ├── openai.go                     # OpenAI/DeepSeek API 客户端
-│   │   ├── schema.go                     # API 响应结构定义
-│   │   └── stream_scanner.go             # SSE 流式响应解析
+│   ├── server/                           # 🆕 gRPC 服务实现 + 网关编排（取代旧 internal/http 与 middleware）
+│   │   ├── server.go                     # gRPC 服务与 grpc-gateway 网关启动编排、SSE 对话透传、统一错误处理、CORS
+│   │   ├── interceptor.go                # JWT 鉴权拦截器（Unary + Stream；鉴权策略由 proto 方法选项驱动）
+│   │   ├── context.go                    # 用户信息的 context 注入/读取
+│   │   ├── convert.go                    # 领域模型 → pb 消息 的转换
+│   │   ├── auth_service.go               # AuthService gRPC 实现（注册/登录/发码）
+│   │   ├── agent_service.go              # AgentService gRPC 实现（列表/工具/切换）
+│   │   └── session_service.go            # SessionService gRPC 实现（会话 CRUD + Chat 流式）
+│   ├── llm/                              # LLM 客户端（openai.go / schema.go / stream_scanner.go）
 │   ├── logger/
 │   │   └── logger.go                     # 日志系统（INFO/ERROR/WARNING → 文件）
-│   ├── middleware/
-│   │   └── auth.go                       # JWT 鉴权中间件（提取并验证 Bearer Token）
-│   ├── store/
-│   │   ├── db.go                         # 数据库连接池管理
-│   │   ├── user.go                       # 用户数据访问对象（CRUD）
-│   │   ├── session.go                    # 会话数据访问对象（创建、查询、归档）
-│   │   ├── message.go                    # 消息数据访问对象（保存、查询、内存转换）
-│   │   └── email_verification.go         # 邮箱验证码数据访问对象（频率查询、写入、失效、校验）
-│   └── tools/
-│       ├── setup.go                      # 工具注册辅助函数
-│       ├── local/                        # 本地工具（插件化自注册）
-│       │   ├── registry.go               # 工具注册表（全局工厂注册 + 按组发现）
-│       │   ├── weather.go                # 天气查询工具
-│       │   ├── ip.go                     # IP 查询工具
-│       │   ├── qrcode.go                 # 二维码生成工具
-│       │   ├── translation.go            # 翻译工具
-│       │   ├── textprocessor.go          # 文本处理工具
-│       │   └── shorturl.go               # 短链接生成工具
-│       └── mcp/                          # MCP工具模块
-│           ├── client.go                 # MCP客户端（JSON-RPC通信）
-│           └── tool.go                   # MCP工具适配器（适配types.Tool接口）
+│   ├── store/                            # 数据访问层（db/user/session/message/email_verification）
+│   └── tools/                            # 本地工具（插件化自注册）与 MCP 工具模块
 ├── pkg/
 │   ├── types/
-│   │   └── types.go                      # 公共类型定义（Message, Tool, Config, User, Session 等）
+│   │   └── types.go                      # 公共类型定义（含 HTTPConfig / GRPCConfig）
 │   └── utils/
 │       └── utils.go                      # 工具函数
 ├── scripts/
-│   └── 001_create_tables.sql                        # 数据库建表 SQL（users / sessions / messages）
-├── logs/
-│   └── agent.log                         # 运行日志输出
+│   └── 001_create_tables.sql             # 数据库建表 SQL（users / sessions / messages）
+├── logs/                                 # 运行日志输出
 ├── REFERENCE/                            # 参考文档
 ├── go.mod
 ├── go.sum
 └── README.md
 ```
+
+> **已移除**：`internal/http/http.go`（手写的 `net/http` 路由层）与 `internal/middleware/auth.go`（HTTP JWT 中间件）。它们的职责已分别由 grpc-gateway + gRPC 服务实现、以及 gRPC 鉴权拦截器取代。
 
 ## 🚀 快速开始
 
@@ -126,6 +122,7 @@ agently/
 - SMTP 邮件服务（必配，用于发送注册验证码）
 - 网络连接（访问 LLM API 和工具 API）
 - （可选）MCP 工具服务端（黄金分析助手需要）
+- （仅在需要**重新生成** gRPC 代码/接口文档时）`protoc` 及以下插件：`protoc-gen-go`、`protoc-gen-go-grpc`、`protoc-gen-grpc-gateway`、`protoc-gen-openapiv2`。生成产物已随仓库提交，普通运行无需安装这些工具。
 
 ### 2. 安装依赖
 
@@ -164,10 +161,15 @@ log:
 prompt:
   dir: "../../internal/agents"
 
-# HTTP 服务配置
+# HTTP 服务配置（grpc-gateway 对外暴露的 REST/SSE 网关）
 http:
   host: "0.0.0.0"
-  port: 8088
+  port: 8080
+
+# gRPC 服务配置（系统核心服务层，HTTP 网关在本机反向代理到此端口）
+grpc:
+  host: "0.0.0.0"   # 留空则与 http.host 一致
+  port: 8081        # 留空或 0 则默认取 http.port + 1
 
 # 数据库配置（PostgreSQL）
 database:
@@ -225,41 +227,83 @@ cd cmd/server
 go run main.go
 ```
 
-### 6. 交互示例
+### 6. 启动与交互示例
+
+> 本项目已移除 CLI 交互模式，改为**纯服务端**运行：启动后同时提供 gRPC 服务（内部回环）与 grpc-gateway 的 REST/SSE 接口，通过 HTTP 客户端（前端 / curl / Postman）交互。
+
+**启动日志（示例）：**
 
 ```
-========== 🤖 AI Agent 助手（多Agent模式） ==========
-
-  ✅ Agent [intention_router] (意图路由助手) 创建成功 [系统路由]
-  ✅ Agent [general] (通用工具助手) 创建成功
-  ✅ Agent [gold_analysis] (黄金分析助手) 创建成功
-
-🤖 可用Agent列表
---------------------------------------------------
-▶ 1. ✅ [general] 通用工具助手
-      提供天气查询、IP查询、翻译、二维码生成等通用工具服务
-  2. ✅ [gold_analysis] 黄金分析助手
-      提供专业的黄金市场分析、行情查询和投资参考服务
---------------------------------------------------
-
-👤 [auto] > 北京的天气怎么样？
-🔀 [自动路由] → 通用工具助手 (涉及天气查询)
-🤖 助手: ...（流式输出天气信息）
-
-👤 [auto] > 今日黄金行情如何？
-🔀 [自动路由] → 黄金分析助手 (涉及黄金行情分析)
-🤖 助手: ...（流式输出黄金分析结果）
-
-👤 [auto] > switch general
-✅ 已切换到: 通用工具助手 (general)，自动路由已关闭
-
-👤 [general] > auto
-✅ 已开启自动路由模式，系统将自动判断并分配最合适的Agent
+[INFO] Agently 系统启动
+[INFO] 构建项目中全部 agent 与其对应的基本信息的映射关系...
+[INFO] 系统Agent [intention_router] 已自动设置为路由器
+[INFO] 业务Agent [general] 已设为默认激活Agent
+[INFO] Agent [general] 已注册到管理器
+[INFO] Agent [gold_analysis] 已注册到管理器
+[INFO] Agent [news_analysis] 已注册到管理器
+[INFO] 数据库连接成功，认证服务已初始化
+[INFO] 邮箱验证服务已启用（SMTP: smtp.qq.com）
+[INFO] 鉴权策略已加载：共 11 个方法，其中公开（免鉴权）方法 3 个: /agently.v1.AuthService/Login, /agently.v1.AuthService/Register, /agently.v1.AuthService/SendVerifyCode
+[INFO] gRPC 服务启动，监听地址: 127.0.0.1:8081
+[INFO] HTTP 网关启动，监听地址: 0.0.0.0:8080
 ```
 
-## 🌐 HTTP API
+**通过 HTTP 接口交互（以本地直连网关 `http://localhost:8080` 为例）：**
 
-服务默认监听 `http://localhost:8088`，所有业务接口均需 JWT 鉴权。
+```bash
+# 1) 登录获取 JWT Token
+curl -X POST http://localhost:8080/v1/auth:login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"mypassword123"}'
+# 返回：{"code":0,"token":"eyJhbGciOi...","user":{...}}
+
+TOKEN="eyJhbGciOi..."   # 替换为上一步返回的 token
+
+# 2) 创建会话（需鉴权）
+curl -X POST http://localhost:8080/v1/sessions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"general","title":""}'
+# 返回：{"code":0,"session":{"id":"<session_id>", ...}}
+
+# 3) 在会话中发消息（自动路由 + SSE 流式）
+curl -N -X POST http://localhost:8080/v1/sessions/<session_id>:chat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"北京的天气怎么样？","auto_route":true}'
+```
+
+**SSE 流式响应（对话接口输出）：**
+
+```
+event: route
+data: {"agent_name": "通用工具助手", "reason": "涉及天气查询"}
+
+event: tool_call
+data: {"tool_name": "qweather", "tool_args": "{\"city\":\"北京\"}"}
+
+event: tool_result
+data: {"tool_name": "qweather", "tool_result": "北京 晴 26℃..."}
+
+event: message
+data: {"content": "北京今天"}
+
+event: message
+data: {"content": "天气晴朗..."}
+
+event: done
+data: {}
+```
+
+> `curl -N` 关闭输出缓冲以实时查看 SSE 流。自动路由模式下，若命中的 Agent 与会话当前 `agent_id` 不同，后端会同步更新会话主 Agent（见下文「会话 Agent 自动同步」）。
+
+## 🌐 HTTP API（grpc-gateway 兼容层）
+
+> 下列 REST/SSE 接口由 **grpc-gateway** 自动映射到对应的 gRPC 方法，供前端与第三方零改造接入。若需原生 gRPC 调用，见 [gRPC 架构与迁移说明](#-grpc-架构与迁移说明)。
+
+> **路径约定（v1，资源导向）**：契约中的路径统一采用 `/v1/...`，**不含产品名前缀**；产品名/部署前缀（如 `/api/agently`）由 nginx/ingress 统一添加，保持契约与部署解耦。动作型接口（切换/对话/归档）使用 `:动词` 自定义方法。下表以**网关内部路径**（`/v1/...`）为准；若 nginx 配置了 `/api/agently/` → 去前缀反代，则前端对外路径为 `/api/agently/v1/...`。
+
+服务默认监听 `http://localhost:8080`（gRPC 默认监听回环 `127.0.0.1:8081`），除 `auth` 系列外的业务接口均需 JWT 鉴权。
 
 ### 鉴权方式
 
@@ -271,28 +315,29 @@ Token 通过注册或登录接口获取，默认有效期 **72 小时**。
 
 ### 注册流程
 
-1. 调用 `POST /api/agently/auth/send-code` 发送验证码到邮箱
+1. 调用 `POST /v1/auth:sendVerifyCode` 发送验证码到邮箱
 2. 用户查收邮件，获取 6 位数字验证码（有效期 5 分钟）
-3. 调用 `POST /api/agently/auth/register` 提交用户名、邮箱、密码和验证码完成注册
+3. 调用 `POST /v1/auth:register` 提交用户名、邮箱、密码和验证码完成注册
 
 ### 接口列表
 
-| 方法 | 路径 | 鉴权 | 说明 |
+| 方法 | 路径（网关内部 `/v1`） | 鉴权 | 说明 |
 |------|------|------|------|
-| POST | `/api/agently/auth/send-code` | ❌ | 发送邮箱验证码（注册/重置密码） |
-| POST | `/api/agently/auth/register` | ❌ | 用户注册（需先获取验证码），返回 JWT Token |
-| POST | `/api/agently/auth/login` | ❌ | 用户登录（支持用户名/邮箱），返回 JWT Token |
-| GET | `/api/agently/agents` | ✅ | 获取可用 Agent 列表 |
-| POST | `/api/agently/switch` | ✅ | 切换当前激活的 Agent |
-| GET | `/api/agently/sessions` | ✅ | 查询会话列表（支持按 agent_id 过滤、分页） |
-| POST | `/api/agently/sessions` | ✅ | 创建新会话 |
-| GET | `/api/agently/sessions/{id}/messages` | ✅ | 查询会话消息历史 |
-| POST | `/api/agently/sessions/{id}/chat` | ✅ | 在会话中发送消息（SSE 流式 + 持久化） |
-| DELETE | `/api/agently/sessions/{id}` | ✅ | 归档会话（软删除） |
+| POST | `/v1/auth:sendVerifyCode` | ❌ | 发送邮箱验证码（注册/重置密码） |
+| POST | `/v1/auth:register` | ❌ | 用户注册（需先获取验证码），返回 JWT Token |
+| POST | `/v1/auth:login` | ❌ | 用户登录（支持用户名/邮箱），返回 JWT Token |
+| GET | `/v1/agents` | ✅ | 获取可用 Agent 列表 |
+| GET | `/v1/tools` | ✅ | 获取所有可用工具列表（按工具名去重） |
+| POST | `/v1/agents:switch` | ✅ | 切换当前激活的 Agent |
+| GET | `/v1/sessions` | ✅ | 查询会话列表（支持按 agent_id 过滤、分页） |
+| POST | `/v1/sessions` | ✅ | 创建新会话 |
+| GET | `/v1/sessions/{id}/messages` | ✅ | 查询会话消息历史 |
+| POST | `/v1/sessions/{id}:chat` | ✅ | 在会话中发送消息（SSE 流式 + 持久化） |
+| POST | `/v1/sessions/{id}:archive` | ✅ | 归档会话（软删除） |
 
 ### SSE 事件格式（聊天接口）
 
-`/api/agently/sessions/{id}/chat` 响应为 `text/event-stream`，包含以下事件：
+`POST /v1/sessions/{id}:chat` 响应为 `text/event-stream`，包含以下事件：
 
 ```
 event: route
@@ -307,7 +352,7 @@ data: {}
 
 > **会话 Agent 自动同步**：在自动路由模式下（`auto_route: true`），若路由命中的 Agent 与会话当前 `agent_id` 不同，后端会调用 `SessionStore.UpdateAgentID` 同步会话的主 Agent（仅对 `status=1` 活跃会话生效）。前端在下次拉取会话列表或会话详情时，会看到 `agent_id` 已更新，从而归类到正确的 Agent 分组（例如新闻类问题归入"新闻与总结"）。
 
-> 详细接口文档见 `API_DOC.yaml`（OpenAPI 3.0 格式）。
+> **接口契约以 `pb/proto/agently.proto` 为唯一来源**；供前端/第三方查阅的 OpenAPI 文档 `pb/gen/agently.swagger.json` 由 `bash pb/gen.sh` 从 proto **自动生成**（勿手改），随契约同步演进。可用 Swagger UI / Redoc 等工具加载查看。
 
 ---
 
@@ -317,8 +362,8 @@ data: {}
 
 ```mermaid
 graph TD
-    U[用户输入] --> M[Main 入口]
-    M --> AM[Agent Manager]
+    U[客户端请求] --> GW[HTTP 网关 / gRPC]
+    GW --> AM[Agent Manager]
     AM --> |自动路由模式| IR[intention_router<br/>意图路由Agent]
     IR --> |分析意图| AM
     AM --> AG[Agent: general<br/>通用工具助手]
@@ -331,43 +376,51 @@ graph TD
     MCP --> MS[MCP Server<br/>黄金分析工具服务]
 ```
 
-### HTTP 服务架构
+### HTTP 服务架构（gRPC + grpc-gateway）
 
 ```mermaid
 graph TD
-    FE[前端 / 客户端] --> |HTTP + JWT| MW[AuthMiddleware<br/>JWT 鉴权中间件]
-    MW --> |注入 user_id| H[Handler]
-    H --> |会话操作| SS[SessionStore<br/>PostgreSQL]
-    H --> |消息操作| MS2[MessageStore<br/>PostgreSQL]
-    H --> |AI 对话| AM2[Agent Manager]
+    FE[前端 / REST 客户端] --> |HTTP + JWT| GW[grpc-gateway<br/>REST/SSE 网关]
+    GW --> |回环反向代理 127.0.0.1:grpc_port| INT[AuthInterceptor<br/>JWT 鉴权拦截器]
+    LC[本机 gRPC 客户端<br/>可选] -.-> |gRPC + metadata JWT| INT
+    INT --> |注入 user_id| SVC[gRPC 服务实现]
+    SVC --> AS2[AuthService]
+    SVC --> AGS[AgentService]
+    SVC --> SES[SessionService]
+    AS2 --> US[UserStore<br/>PostgreSQL]
+    SES --> |会话/消息| SS[Session/Message Store<br/>PostgreSQL]
+    SES --> |AI 对话| AM2[Agent Manager]
     AM2 --> AG2[Target Agent]
-    AG2 --> |SSE 流式| FE
-    FE --> |无需鉴权| AUTH[/api/agently/auth/*<br/>注册 / 登录]
-    AUTH --> AS[AuthService<br/>bcrypt + JWT]
-    AS --> US[UserStore<br/>PostgreSQL]
+    AG2 --> |ChatEvent 流| SES
+    SES --> |gRPC stream| GW
+    GW --> |转写为 SSE| FE
 ```
+
+> gRPC 默认仅监听 `127.0.0.1`，作为网关内部服务；上图中「本机 gRPC 客户端」为可选路径（同机可达）。外部客户端一律经 HTTP 网关接入。
+
+> 网关对 `/sessions/{id}/chat` 使用自定义 SSE 处理器：它作为 gRPC 客户端调用服务端流式 `Chat`，再把每个 `ChatEvent` 转写成与旧版完全一致的 `event: <type>\ndata: <json>` 事件，因此**前端 SSE 逻辑无需任何改动**。
 
 ### 意图路由流程
 
 ```mermaid
 sequenceDiagram
-    participant U as 用户
-    participant M as Main
+    participant U as 客户端
+    participant S as SessionService.Chat（gRPC）
     participant AM as Agent Manager
     participant IR as Router Agent
     participant LLM as LLM
     participant TA as Target Agent
 
-    U->>M: 输入问题
-    M->>AM: Route(userMessage)
+    U->>S: POST /v1/sessions/{id}:chat（经网关）
+    S->>AM: Route(userMessage)
     AM->>IR: ProcessMessage(userMessage)
     IR->>LLM: Chat(分析意图)
     LLM-->>IR: {"agent_id":"general","reason":"..."}
     IR-->>AM: 路由结果
-    AM-->>M: targetAgentID
-    M->>TA: ProcessMessageStream(userMessage)
-    TA-->>M: 流式响应
-    M-->>U: 实时输出
+    AM-->>S: targetAgentID
+    S->>TA: ProcessMessageStream(userMessage)
+    TA-->>S: 流式事件
+    S-->>U: SSE 流式输出
 ```
 
 ### 核心对话流程
@@ -398,10 +451,137 @@ sequenceDiagram
 
 ### 日志系统
 
-- 交互式输出（提示、AI 回答）→ **终端 stdout**
-- 运行日志（初始化、工具调用、错误）→ **日志文件** (`logs/agent.log`)
+- AI 回答通过 **SSE 流式**返回给客户端（不再有 CLI 终端输出）
+- 运行日志（初始化、路由、工具调用、错误）→ **日志文件** (`logs/agent.log`)
 - 日志级别：`INFO`、`ERROR`、`WARNING`
 - 基于 Go 标准库 `log` 实现，轻量无第三方依赖
+
+---
+
+## 🔌 gRPC 架构与迁移说明
+
+本项目已完成一次**路由层的 gRPC 化重构**：过去手写的 `net/http` 路由（`internal/http`）与 HTTP JWT 中间件（`internal/middleware`）被彻底移除，所有请求路由统一由 gRPC 服务契约描述，并通过 grpc-gateway 暴露兼容旧版的 REST/SSE。
+
+### 设计目标
+
+- **单一契约来源**：接口以 `pb/proto/agently.proto` 为唯一事实来源，消息结构、方法签名、HTTP 映射集中维护。
+- **对外零破坏**：REST 路径、鉴权方式（`Authorization: Bearer <token>`）、SSE 事件格式（`event`/`data`）与错误响应体 `{code, message}` 均与旧版保持一致，前端无需改动。
+- **原生 gRPC 能力**：底层为强类型 gRPC 服务，便于本机/同环境内的服务间调用。默认 gRPC 仅监听回环（`127.0.0.1`），作为网关的内部实现不对外暴露；如确有对外原生 gRPC 需求，可将 `grpc.host` 显式设为 `0.0.0.0`。
+
+### 服务划分（`agently.v1`）
+
+> 契约唯一来源为 `pb/proto/agently.proto`（仅存放原生 proto）；生成代码统一输出到 `pb/gen/`（Go 包 `agentlypb`，导入路径 `github.com/hwanyan/agently/pb/gen`）。
+
+| gRPC 服务 | 方法 | 映射的 REST 路径 | 鉴权 |
+|-----------|------|------------------|------|
+| `AuthService` | `SendVerifyCode` | `POST /v1/auth:sendVerifyCode` | ❌ |
+| `AuthService` | `Register` | `POST /v1/auth:register` | ❌ |
+| `AuthService` | `Login` | `POST /v1/auth:login` | ❌ |
+| `AgentService` | `ListAgents` | `GET /v1/agents` | ✅ |
+| `AgentService` | `ListTools` | `GET /v1/tools` | ✅ |
+| `AgentService` | `SwitchAgent` | `POST /v1/agents:switch` | ✅ |
+| `SessionService` | `ListSessions` | `GET /v1/sessions` | ✅ |
+| `SessionService` | `CreateSession` | `POST /v1/sessions` | ✅ |
+| `SessionService` | `ListMessages` | `GET /v1/sessions/{session_id}/messages` | ✅ |
+| `SessionService` | `Chat`（服务端流式） | `POST /v1/sessions/{session_id}:chat` | ✅ |
+| `SessionService` | `ArchiveSession` | `POST /v1/sessions/{session_id}:archive` | ✅ |
+
+> 路径采用资源导向 + `/v1` 版本前缀，动作型接口用 `:动词` 自定义方法；产品名前缀由 nginx/ingress 添加，不写入契约。
+
+### 请求路由流程
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端（REST 或 gRPC）
+    participant GW as grpc-gateway
+    participant I as AuthInterceptor
+    participant S as gRPC 服务实现
+    participant B as 业务层（Manager/Store/Auth）
+
+    C->>GW: HTTP 请求（REST 客户端）
+    GW->>I: 反向代理为 gRPC 调用（透传 authorization）
+    Note over C,I: 原生 gRPC 客户端可直接调用 I（携带 metadata）
+    I->>I: 校验 Bearer Token，注入 user_id（公开方法跳过）
+    I->>S: 转交请求
+    S->>B: 复用既有业务逻辑
+    B-->>S: 结果
+    S-->>GW: 响应 / 流
+    GW-->>C: REST JSON / SSE
+```
+
+### 鉴权：从 HTTP 中间件到 gRPC 拦截器（契约即策略）
+
+- 旧：`internal/middleware/auth.go` 从 HTTP 头解析并校验 JWT。
+- 新：`internal/server/interceptor.go` 提供 **Unary + Stream 双拦截器**，从 gRPC metadata 的 `authorization` 读取 Bearer Token 并校验，成功后把 `user_id`/`username` 注入 `context`。
+- 网关通过 `runtime.WithMetadata` 把 HTTP `Authorization` 头透传为 gRPC metadata。
+- **鉴权策略写在 proto 契约里**：在 `agently.proto` 中定义自定义方法选项 `(agently.v1.public)`，对公开方法（注册/登录/发码）显式标注 `option (agently.v1.public) = true;`。拦截器启动时遍历 proto 描述符注册表构建「方法 → 是否公开」策略表。
+- 语义为 **default-secure**：只有显式声明 `public=true` 的方法免鉴权，其余（含未来新增方法）一律需要鉴权，从根本上杜绝“新增方法即意外公开”的隐患。
+
+```proto
+extend google.protobuf.MethodOptions {
+  bool public = 90001;   // public=true 表示免鉴权；缺省视为需要鉴权
+}
+
+rpc Login(LoginRequest) returns (AuthResponse) {
+  option (google.api.http) = { post: "/v1/auth:login" body: "*" };
+  option (agently.v1.public) = true;   // 显式声明为公开接口
+}
+```
+
+### 流式对话（SSE 完全兼容）
+
+- gRPC 侧 `Chat` 为**服务端流式** RPC，逐条下发 `ChatEvent`（`type` ∈ `route/message/tool_call/tool_result/tool_error/error/done`）。
+- 网关侧对 `/v1/sessions/{id}:chat` 注册**自定义 SSE 处理器**：内部以 gRPC 客户端调用 `Chat`，把每个 `ChatEvent` 转写为 `event: <type>\ndata: <json>\n\n`，与旧版 SSE 字节级一致。
+- **覆盖生成处理器的关键**：`runtime.ServeMux.Handle` 采用“前插”策略，匹配时从前往后取首个命中，故**后注册者优先**。因此自定义 SSE 处理器必须在 `RegisterSessionServiceHandler` **之后**注册，才能覆盖自动生成的流式 `Chat` 处理器。
+- 首个事件采用「预读」策略：若首个事件是鉴权/校验类错误（未登录、会话不存在、消息为空），以标准 `4xx` JSON 返回；否则切换到 SSE 流。
+
+### JSON 兼容性细节
+
+- 网关 Marshaler 启用 `UseProtoNames`（字段 snake_case，如 `agent_id`/`is_active`/`created_at`）与 `EmitUnpopulated`（输出零值字段），与旧接口保持一致。
+- 时间字段统一格式化为 RFC3339 字符串；可空字段（如 `last_login`/`archived_at`）为空时输出空字符串。
+- 错误响应通过统一的错误处理器输出 `{"code": <HTTP 状态码>, "message": "..."}`，`code` 采用 HTTP 状态码而非 gRPC code。
+
+### 端口
+
+- HTTP 网关端口：`http.port`（默认 `8080`）——对外提供 REST/SSE。
+- gRPC 端口：`grpc.port`（留空/0 时默认取 `http.port + 1`）；`grpc.host` 默认 `127.0.0.1`，即 **gRPC 仅监听本机回环、不对外暴露**，网关经回环反向代理到该端口。外部流量一律从 HTTP 网关进入。
+
+### 重新生成 gRPC 代码
+
+`.proto` 变更后，在项目根目录执行：
+
+```bash
+bash pb/gen.sh
+```
+
+脚本等价于：
+
+```bash
+protoc \
+  -I pb/api \
+  -I pb/proto \
+  --go_out=pb/gen --go_opt=paths=source_relative \
+  --go-grpc_out=pb/gen --go-grpc_opt=paths=source_relative \
+  --grpc-gateway_out=pb/gen --grpc-gateway_opt=paths=source_relative \
+  --openapiv2_out=pb/gen \
+  --openapiv2_opt=logtostderr=true,json_names_for_fields=false \
+  pb/proto/agently.proto
+```
+
+> - `google/api/annotations.proto`、`google/api/http.proto` 已随仓库置于 `pb/api/google/api/` 下，protoc 可离线解析 HTTP 注解，无需访问网络或 BSR。
+> - `--openapiv2_out` 由 `protoc-gen-openapiv2` 插件（属 grpc-gateway 生态）从带 `google.api.http` 注解的 proto 生成 `agently.swagger.json`；`json_names_for_fields=false` 使字段名保持 snake_case，与网关 `UseProtoNames` 一致。若本机无该插件：`go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@latest`。
+
+### 原生 gRPC 调用示例（Go）
+
+```go
+conn, _ := grpc.NewClient("127.0.0.1:8081", grpc.WithTransportCredentials(insecure.NewCredentials()))
+client := agentlypb.NewAgentServiceClient(conn)
+
+ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+token)
+resp, err := client.ListAgents(ctx, &agentlypb.ListAgentsRequest{})
+```
+
+---
 
 ## 📧 个人开发者验证码/短信验证方案
 
@@ -596,9 +776,12 @@ llm:
 
 | 依赖 | 用途 |
 |------|------|
-| `github.com/chzyer/readline` | 终端交互（支持历史记录、行编辑） |
+| `google.golang.org/grpc` | gRPC 服务端/客户端运行时 |
+| `google.golang.org/protobuf` | Protobuf 运行时与 JSON 编解码（protojson） |
+| `github.com/grpc-ecosystem/grpc-gateway/v2` | grpc-gateway：REST/SSE ↔ gRPC 反向代理 |
 | `github.com/skip2/go-qrcode` | 二维码生成 |
 | `github.com/golang-jwt/jwt/v5` | JWT 签发与验证 |
+| `github.com/lib/pq` | PostgreSQL 驱动 |
 | `golang.org/x/crypto` | bcrypt 密码哈希 |
 | `golang.org/x/text` | 文本处理 |
 | `gopkg.in/yaml.v2` | YAML 配置解析 |

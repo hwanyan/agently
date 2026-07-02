@@ -1,0 +1,287 @@
+// Package agentlypb 定义 Agently 的全部 gRPC 服务契约。
+//
+// 设计说明：
+//   - 所有对外能力（认证、Agent 管理、会话与流式对话）均以 gRPC 服务描述，
+//     通过 grpc-gateway 的 google.api.http 注解同时映射到与旧版一致的 REST 路径，
+//     从而让路由统一收敛到 gRPC，同时保留 HTTP/JSON 及 SSE 客户端的兼容性。
+//   - 字段一律使用 snake_case，网关侧启用 UseProtoNames，保证 JSON 字段名与旧接口完全一致。
+syntax = "proto3";
+
+package agently.v1;
+
+option go_package = "github.com/hwanyan/agently/pb/gen;agentlypb";
+
+import "google/api/annotations.proto";
+import "google/protobuf/descriptor.proto";
+
+// ============================================================
+// 鉴权策略（契约即策略）
+// ============================================================
+//
+// 通过自定义方法选项声明某个 RPC 是否为公开接口（无需 JWT 鉴权）。
+// 语义为 default-secure：不声明或 public=false 时一律需要鉴权，
+// 只有显式声明 public=true 的方法才免鉴权。鉴权拦截器在启动时读取该选项构建策略表。
+extend google.protobuf.MethodOptions {
+  // public=true 表示该方法为公开接口，免 JWT 鉴权；缺省视为需要鉴权。
+  bool public = 90001;
+}
+
+// ============================================================
+// 领域模型
+// ============================================================
+
+// User 用户信息（不含密码）
+message User {
+  string id = 1;
+  string username = 2;
+  string email = 3;
+  string nickname = 4;
+  string avatar_url = 5;
+  int32 status = 6; // 1=正常, 0=禁用
+  string created_at = 7; // RFC3339
+  string updated_at = 8; // RFC3339
+  string last_login = 9; // RFC3339，可能为空
+}
+
+// Session 会话信息
+message Session {
+  string id = 1;
+  string user_id = 2;
+  string agent_id = 3;
+  string title = 4;
+  string summary = 5;
+  int32 status = 6; // 1=活跃, 0=已归档
+  int32 message_cnt = 7;
+  string created_at = 8;
+  string updated_at = 9;
+  string archived_at = 10; // 可能为空
+}
+
+// StoredMessage 持久化消息
+message StoredMessage {
+  string id = 1;
+  string session_id = 2;
+  string user_id = 3;
+  string role = 4;
+  string content = 5;
+  string tool_call_id = 6;
+  string tool_call_list = 7; // JSON 序列化后的工具调用列表字符串
+  string agent_id = 8;
+  int32 token_count = 9;
+  int32 seq = 10;
+  string created_at = 11;
+}
+
+// AgentItem Agent 列表项
+message AgentItem {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  bool is_active = 4;
+  bool registered = 5;
+}
+
+// ToolItem 工具列表项
+message ToolItem {
+  string name = 1;
+  string description = 2;
+  repeated string agent_ids = 3;
+}
+
+// AgentBrief 切换成功时返回的精简 Agent 信息
+message AgentBrief {
+  string id = 1;
+  string name = 2;
+}
+
+// ============================================================
+// 认证服务
+// ============================================================
+
+message SendVerifyCodeRequest {
+  string email = 1;
+  string purpose = 2; // register / reset_password
+}
+message SendVerifyCodeResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message RegisterRequest {
+  string username = 1;
+  string email = 2;
+  string password = 3;
+  string nickname = 4;
+  string verify_code = 5;
+}
+
+message LoginRequest {
+  string username = 1; // 支持用户名或邮箱
+  string password = 2;
+}
+
+message AuthResponse {
+  int32 code = 1;
+  string token = 2;
+  User user = 3;
+}
+
+// AuthService 用户认证（注册 / 登录 / 邮箱验证码），均为公开接口，无需鉴权
+//
+// REST 路径采用资源导向 + 版本前缀（/v1）。产品名前缀（如 /api/agently）不写入契约，
+// 由 nginx/ingress 统一添加，保持契约与部署拓扑解耦。auth 属动作型接口，使用 :动词 自定义方法。
+service AuthService {
+  rpc SendVerifyCode(SendVerifyCodeRequest) returns (SendVerifyCodeResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth:sendVerifyCode"
+      body: "*"
+    };
+    option (agently.v1.public) = true;
+  }
+  rpc Register(RegisterRequest) returns (AuthResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth:register"
+      body: "*"
+    };
+    option (agently.v1.public) = true;
+  }
+  rpc Login(LoginRequest) returns (AuthResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth:login"
+      body: "*"
+    };
+    option (agently.v1.public) = true;
+  }
+}
+
+// ============================================================
+// Agent 管理服务（需鉴权）
+// ============================================================
+
+message ListAgentsRequest {}
+message ListAgentsResponse {
+  int32 code = 1;
+  repeated AgentItem agents = 2;
+}
+
+message ListToolsRequest {}
+message ListToolsResponse {
+  int32 code = 1;
+  repeated ToolItem tools = 2;
+}
+
+message SwitchAgentRequest {
+  string agent_id = 1;
+}
+message SwitchAgentResponse {
+  int32 code = 1;
+  string message = 2;
+  AgentBrief agent = 3;
+}
+
+// AgentService Agent 列表 / 工具列表 / 切换
+service AgentService {
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse) {
+    option (google.api.http) = {get: "/v1/agents"};
+  }
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse) {
+    option (google.api.http) = {get: "/v1/tools"};
+  }
+  // SwitchAgent 为动作型接口，使用 :switch 自定义方法
+  rpc SwitchAgent(SwitchAgentRequest) returns (SwitchAgentResponse) {
+    option (google.api.http) = {
+      post: "/v1/agents:switch"
+      body: "*"
+    };
+  }
+}
+
+// ============================================================
+// 会话与对话服务（需鉴权）
+// ============================================================
+
+message ListSessionsRequest {
+  string agent_id = 1; // 可选，过滤
+  int32 limit = 2;
+  int32 offset = 3;
+}
+message ListSessionsResponse {
+  int32 code = 1;
+  repeated Session sessions = 2;
+}
+
+message CreateSessionRequest {
+  string agent_id = 1;
+  string title = 2;
+}
+message CreateSessionResponse {
+  int32 code = 1;
+  Session session = 2;
+}
+
+message ListMessagesRequest {
+  string session_id = 1; // 路径参数
+  int32 limit = 2;
+  int32 offset = 3;
+}
+message ListMessagesResponse {
+  int32 code = 1;
+  repeated StoredMessage messages = 2;
+}
+
+message ArchiveSessionRequest {
+  string session_id = 1; // 路径参数
+}
+message ArchiveSessionResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ChatRequest {
+  string session_id = 1; // 路径参数
+  string message = 2;
+  optional bool auto_route = 3; // 缺省视为 true
+}
+
+// ChatEvent 对应旧 SSE 的各类事件；type 取值：
+// route / message / tool_call / tool_result / tool_error / done / error
+message ChatEvent {
+  string type = 1;
+  string agent_name = 2; // type=route
+  string reason = 3; // type=route
+  string content = 4; // type=message
+  string tool_name = 5; // type=tool_call/tool_result/tool_error
+  string tool_args = 6; // type=tool_call
+  string tool_result = 7; // type=tool_result
+  string error = 8; // type=error/tool_error
+}
+
+// SessionService 会话增删查 + 流式对话
+service SessionService {
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions"};
+  }
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
+    option (google.api.http) = {
+      post: "/v1/sessions"
+      body: "*"
+    };
+  }
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/messages"};
+  }
+  // Chat 服务端流式：动作型接口，使用 :chat 自定义方法；每个 ChatEvent 对应旧 SSE 的一个事件
+  rpc Chat(ChatRequest) returns (stream ChatEvent) {
+    option (google.api.http) = {
+      post: "/v1/sessions/{session_id}:chat"
+      body: "*"
+    };
+  }
+  // ArchiveSession 归档（软删除）：动作型接口，使用 :archive 自定义方法
+  rpc ArchiveSession(ArchiveSessionRequest) returns (ArchiveSessionResponse) {
+    option (google.api.http) = {
+      post: "/v1/sessions/{session_id}:archive"
+      body: "*"
+    };
+  }
+}

@@ -8,8 +8,8 @@ import (
 	"github.com/hwanyan/agently/internal/agents"
 	"github.com/hwanyan/agently/internal/auth"
 	"github.com/hwanyan/agently/internal/config"
-	"github.com/hwanyan/agently/internal/http"
 	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/internal/server"
 	"github.com/hwanyan/agently/internal/store"
 	"github.com/hwanyan/agently/pkg/types"
 )
@@ -28,8 +28,8 @@ func main() {
 	db, authSvc, sessionStore, messageStore := initDatabase(cfg)
 	defer db.Close()
 
-	// 启动 HTTP 服务
-	startHTTPServer(cfg, agentManager, authSvc, sessionStore, messageStore)
+	// 启动 gRPC 服务与 HTTP 网关
+	startServer(cfg, agentManager, authSvc, sessionStore, messageStore)
 }
 
 // initAgents 加载 agent
@@ -99,21 +99,21 @@ func initDatabase(cfg *types.Config) (db *store.DB, authSvc *auth.Service,
 	return db, authSvc, sessionStore, messageStore
 }
 
-// startHTTPServer 启动 HTTP 服务
-func startHTTPServer(
+// startServer 启动 gRPC 服务与 grpc-gateway HTTP 网关
+func startServer(
 	cfg *types.Config,
 	manager *agent.Manager,
 	authSvc *auth.Service,
 	sessionStore *store.SessionStore,
 	messageStore *store.MessageStore,
 ) {
-	httpService := http.NewHTTPService(
+	srv := server.NewServer(
 		manager,
 		authSvc,
 		sessionStore,
 		messageStore,
 		cfg,
 	)
-	httpService.Start()
-	logger.Info("HTTP服务启动成功")
+	srv.Start()
+	logger.Info("服务启动成功")
 }

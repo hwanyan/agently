@@ -75,8 +75,11 @@ func loadConfigFromFile(configPath string) (*types.Config, error) {
 // validateConfig 验证配置的有效性
 func validateConfig(config *types.Config) error {
 	// 验证运行端口
+	if config.GRPC.Port == 0 {
+		return fmt.Errorf("未设置 rpc 服务运行的端口")
+	}
 	if config.HTTP.Port == 0 {
-		return fmt.Errorf("未设置服务运行的端口")
+		return fmt.Errorf("未设置 http 服务运行的端口")
 	}
 	// 验证LLM配置
 	if config.LLM.Provider == "" {
