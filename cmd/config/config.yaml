@@ -45,10 +45,10 @@ llm:
 
 # 工具配置
 tools:
-  # 天气工具（和风天气）
+  # 天气工具
   weather:
     api_key: "*******"
-    base_url: "https://p86yvy2tea.re.qweatherapi.com"
+    base_url: "https://apis.juhe.cn/simpleWeather/query"
 
   # IP 地址查询工具
   ip:

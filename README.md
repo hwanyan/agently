@@ -37,7 +37,7 @@
 
 | # | 工具名 | 功能 | 依赖服务 |
 |---|--------|------|----------|
-| 1 | `qweather` ☁️ | 查询城市实时天气（温度、湿度、风力等） | 和风天气 API |
+| 1 | `weather` ☁️ | 查询城市天气（实时温湿度、风力及未来天气预报） | 聚合数据 API |
 | 2 | `ipapi` 🌍 | 查询 IP/域名的地理位置与网络信息 | ipapi.com |
 | 3 | `qrcode` 🔢 | 生成二维码（dataurl / ascii / file） | 本地生成 |
 | 4 | `translate` 🔡 | 多语言文本翻译 | LibreTranslate |
@@ -201,8 +201,8 @@ llm:
 # 工具配置
 tools:
   weather:
-    api_key: "your-qweather-api-key"
-    base_url: "https://your-qweather-endpoint"
+    api_key: "your-juhe-api-key"
+    base_url: "https://apis.juhe.cn/simpleWeather/query"
   ip:
     access_key: "your-ipapi-access-key"
   translate:
@@ -280,10 +280,10 @@ event: route
 data: {"agent_name": "通用工具助手", "reason": "涉及天气查询"}
 
 event: tool_call
-data: {"tool_name": "qweather", "tool_args": "{\"city\":\"北京\"}"}
+data: {"tool_name": "weather", "tool_args": "{\"city\":\"北京\"}"}
 
 event: tool_result
-data: {"tool_name": "qweather", "tool_result": "北京 晴 26℃..."}
+data: {"tool_name": "weather", "tool_result": "北京 晴 26℃..."}
 
 event: message
 data: {"content": "北京今天"}

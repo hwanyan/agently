@@ -25,70 +25,50 @@ func init() {
 // 天气工具配置常量（定制化内容）
 const (
 	// WeatherToolName 默认天气工具名称
-	WeatherToolName = "qweather"
+	WeatherToolName = "weather"
 
 	// WeatherToolDesc 默认天气工具描述
-	WeatherToolDesc = "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等。支持英文字母缩写，如：beijing、shanghai、guangzhou 等。"
+	WeatherToolDesc = "查询指定城市的天气信息，包括实时温度、湿度、风向、风力、空气质量，以及未来几天的天气预报。支持中文城市名称，如：北京、上海、广州等。"
 )
 
 // WeatherTool 天气查询工具
-// 基于和风天气API实现
+// 基于聚合数据（JuHe）simpleWeather API 实现
 type WeatherTool struct {
 	name        string       // 工具名称
 	description string       // 工具描述
-	apiKey      string       // 和风天气API密钥
-	baseURL     string       // 和风天气API基础URL
+	apiKey      string       // 聚合数据 API 密钥
+	baseURL     string       // 聚合数据 API 接口地址
 	client      *http.Client // HTTP客户端
 }
 
-// QWeatherLocationResponse 和风天气地理位置查询响应
-type QWeatherLocationResponse struct {
-	Code     string `json:"code"`
-	Location []struct {
-		Name      string `json:"name"`      // 地点名称
-		ID        string `json:"id"`        // 地点ID
-		Lat       string `json:"lat"`       // 纬度
-		Lon       string `json:"lon"`       // 经度
-		Adm2      string `json:"adm2"`      // 地级行政区
-		Adm1      string `json:"adm1"`      // 省级行政区
-		Country   string `json:"country"`   // 国家
-		Tz        string `json:"tz"`        // 时区
-		UtcOffset string `json:"utcOffset"` // UTC偏移
-		IsDst     string `json:"isDst"`     // 是否夏令时
-		Type      string `json:"type"`      // 地点类型
-		Rank      string `json:"rank"`      // 地点等级
-		FxLink    string `json:"fxLink"`    // 该地点的天气预报网页链接
-	} `json:"location"`
-}
-
-// QWeatherCurrentResponse 和风天气实时天气响应
-type QWeatherCurrentResponse struct {
-	Code       string `json:"code"`
-	UpdateTime string `json:"updateTime"`
-	FxLink     string `json:"fxLink"`
-	Now        struct {
-		ObsTime   string `json:"obsTime"`   // 数据观测时间
-		Temp      string `json:"temp"`      // 温度，摄氏度
-		FeelsLike string `json:"feelsLike"` // 体感温度，摄氏度
-		Icon      string `json:"icon"`      // 天气状况图标代码
-		Text      string `json:"text"`      // 天气状况文字描述
-		Wind360   string `json:"wind360"`   // 风向360度
-		WindDir   string `json:"windDir"`   // 风向
-		WindScale string `json:"windScale"` // 风力等级
-		WindSpeed string `json:"windSpeed"` // 风速，km/h
-		Humidity  string `json:"humidity"`  // 相对湿度，百分比
-		Precip    string `json:"precip"`    // 当前小时累计降水量，mm
-		Pressure  string `json:"pressure"`  // 大气压强，hPa
-		Vis       string `json:"vis"`       // 能见度，km
-		Cloud     string `json:"cloud"`     // 云量，百分比
-		Dew       string `json:"dew"`       // 露点温度
-	} `json:"now"`
+// JuheWeatherResponse 聚合数据天气查询响应
+type JuheWeatherResponse struct {
+	ErrorCode int    `json:"error_code"` // 返回码，0为查询成功
+	Reason    string `json:"reason"`     // 返回说明
+	Result    struct {
+		City     string `json:"city"` // 城市名称
+		Realtime struct {
+			Info        string `json:"info"`        // 天气情况，如：晴、多云
+			Wid         string `json:"wid"`         // 天气标识id
+			Temperature string `json:"temperature"` // 温度
+			Humidity    string `json:"humidity"`    // 湿度
+			Direct      string `json:"direct"`      // 风向
+			Power       string `json:"power"`       // 风力
+			Aqi         string `json:"aqi"`         // 空气质量指数
+		} `json:"realtime"` // 天气实况
+		Future []struct {
+			Date        string `json:"date"`        // 日期
+			Temperature string `json:"temperature"` // 温度，最低温/最高温
+			Weather     string `json:"weather"`     // 天气情况
+			Direct      string `json:"direct"`      // 风向
+		} `json:"future"` // 近5天天气情况
+	} `json:"result"` // 返回结果集
 }
 
 // NewWeatherTool 创建一个新的天气查询工具实例
 // 参数：
-//   - apiKey: 和风天气API密钥
-//   - baseURL: 和风天气API基础URL
+//   - apiKey: 聚合数据 API 密钥
+//   - baseURL: 聚合数据 API 接口地址
 //
 // 返回：
 //   - *WeatherTool: 天气工具实例
@@ -124,7 +104,7 @@ func (w *WeatherTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"city": map[string]interface{}{
 				"type":        "string",
-				"description": "查询指定城市的当前天气信息，包括温度、湿度、天气状况等。支持中文城市名称，如：北京、上海、广州等。支持英文字母缩写，如：beijing、shanghai、guangzhou 等。",
+				"description": "要查询天气的城市名称，支持中文城市名称，如：北京、上海、广州等。",
 			},
 		},
 		"required": []string{"city"},
@@ -142,9 +122,7 @@ func (w *WeatherTool) Parameters() map[string]interface{} {
 //
 // 实现types.Tool接口
 func (w *WeatherTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	// fmt.Println("    🌤️ 开始查询天气")
-
-	// 如果没有API密钥，返回模拟数据
+	// 如果没有API密钥，返回错误
 	if w.apiKey == "" {
 		return "", fmt.Errorf("API 密钥为空！")
 	}
@@ -154,117 +132,26 @@ func (w *WeatherTool) Execute(ctx context.Context, args map[string]interface{}) 
 	if !ok || city == "" {
 		return "", fmt.Errorf("city参数必须是非空字符串")
 	}
-	// fmt.Printf("    🌤️ 提取到的城市名称为：%s\n", city)
 
-	// 1. 首先查询城市的地理位置信息
-	locationID, locationInfo, err := w.getCityLocation(ctx, city)
-	if err != nil {
-		return "", fmt.Errorf("查询城市位置失败: %w", err)
-	}
-	// fmt.Printf("    🌍 获取到的城市位置信息: %+v\n", locationInfo)
-
-	// 2. 使用地理位置ID查询实时天气
-	weatherData, err := w.getCurrentWeather(ctx, locationID)
+	// 查询天气
+	weatherData, err := w.getWeather(ctx, city)
 	if err != nil {
 		return "", fmt.Errorf("获取天气数据失败: %w", err)
 	}
-	// fmt.Printf("	🌤️ 获取到的天气数据: %+v\n", weatherData)
 
-	// 3. 格式化天气数据
-	return w.formatWeatherData(weatherData, locationInfo)
+	// 格式化天气数据
+	return w.formatWeatherData(weatherData)
 }
 
-// getCityLocation 查询城市地理位置信息
-func (w *WeatherTool) getCityLocation(ctx context.Context, city string) (string, map[string]string, error) {
-	// fmt.Printf("    🌍 开始查询城市位置信息: %s\n", city)
-
-	// 构建地理位置查询URL
+// getWeather 查询指定城市天气信息
+func (w *WeatherTool) getWeather(ctx context.Context, city string) (*JuheWeatherResponse, error) {
+	// 构建查询参数（city 需要 utf8 urlencode，url.Values 会自动处理）
 	params := url.Values{}
-	params.Add("location", city)
+	params.Add("city", city)
+	params.Add("key", w.apiKey)
 
-	// 使用配置的baseURL
-	fullURL := fmt.Sprintf("%s/geo/v2/city/lookup?%s", w.baseURL, params.Encode())
-	// fmt.Printf("    🌍 请求URL: %s\n", fullURL)
-
-	// 创建HTTP请求
-	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
-	if err != nil {
-		logger.Error("创建HTTP请求失败: %v", err)
-		return "", nil, fmt.Errorf("创建HTTP请求失败: %w", err)
-	}
-
-	// 设置认证头（使用 X-QW-Api-Key 而不是URL参数）
-	req.Header.Set("X-QW-Api-Key", w.apiKey)
-	req.Header.Set("Accept-Encoding", "gzip")
-
-	// 发送请求
-	// fmt.Printf("    📡 发送HTTP请求...\n")
-	resp, err := w.client.Do(req)
-	if err != nil {
-		logger.Error("发送HTTP请求失败: %v", err)
-		return "", nil, fmt.Errorf("发送HTTP请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查响应状态
-	// fmt.Printf("    📡 响应状态码: %d\n", resp.StatusCode)
-	if resp.StatusCode != http.StatusOK {
-		logger.Error("API请求失败，状态码: %d", resp.StatusCode)
-		return "", nil, fmt.Errorf("API请求失败，状态码: %d", resp.StatusCode)
-	}
-
-	// 读取并解压缩响应体
-	body, err := utils.ReadResponseBody(resp)
-	if err != nil {
-		logger.Error("读取响应体失败: %v", err)
-		return "", nil, fmt.Errorf("读取响应体失败: %w", err)
-	}
-	// fmt.Printf("    📡 响应体内容: %s\n", string(body))
-
-	// 解析响应
-	var locationResp QWeatherLocationResponse
-	if err := json.Unmarshal(body, &locationResp); err != nil {
-		logger.Error("解析地理位置响应失败: %v", err)
-		return "", nil, fmt.Errorf("解析地理位置响应失败: %w", err)
-	}
-
-	// 检查API返回码
-	// fmt.Printf("    📡 API返回码: %s\n", locationResp.Code)
-	if locationResp.Code != "200" {
-		logger.Error("和风天气API返回错误，代码: %s", locationResp.Code)
-		return "", nil, fmt.Errorf("和风天气API返回错误，代码: %s", locationResp.Code)
-	}
-
-	// 检查是否有结果
-	// fmt.Printf("    📡 找到的位置数量: %d\n", len(locationResp.Location))
-	if len(locationResp.Location) == 0 {
-		logger.Warning("未找到城市: %s", city)
-		return "", nil, fmt.Errorf("未找到城市: %s", city)
-	}
-
-	// 使用第一个结果
-	location := locationResp.Location[0]
-	locationInfo := map[string]string{
-		"name":    location.Name,
-		"adm2":    location.Adm2,
-		"adm1":    location.Adm1,
-		"country": location.Country,
-	}
-
-	return location.ID, locationInfo, nil
-}
-
-// getCurrentWeather 获取实时天气信息
-func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) (*QWeatherCurrentResponse, error) {
-	// fmt.Printf("    🌤️ 开始查询实时天气，位置ID: %s\n", locationID)
-
-	// 构建实时天气查询URL
-	params := url.Values{}
-	params.Add("location", locationID)
-
-	// 使用配置的baseURL
-	fullURL := fmt.Sprintf("%s/v7/weather/now?%s", w.baseURL, params.Encode())
-	// fmt.Printf("    🌤️ 请求URL: %s\n", fullURL)
+	// 拼接完整请求URL
+	fullURL := fmt.Sprintf("%s?%s", w.baseURL, params.Encode())
 
 	// 创建HTTP请求
 	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
@@ -272,13 +159,9 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 		logger.Error("创建HTTP请求失败: %v", err)
 		return nil, fmt.Errorf("创建HTTP请求失败: %w", err)
 	}
-
-	// 设置认证头（使用 X-QW-Api-Key 而不是URL参数）
-	req.Header.Set("X-QW-Api-Key", w.apiKey)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	// 发送请求
-	// fmt.Printf("    📡 发送HTTP请求...\n")
 	resp, err := w.client.Do(req)
 	if err != nil {
 		logger.Error("发送HTTP请求失败: %v", err)
@@ -287,7 +170,6 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 	defer resp.Body.Close()
 
 	// 检查响应状态
-	// fmt.Printf("    📡 响应状态码: %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		logger.Error("API请求失败，状态码: %d", resp.StatusCode)
 		return nil, fmt.Errorf("API请求失败，状态码: %d", resp.StatusCode)
@@ -299,50 +181,50 @@ func (w *WeatherTool) getCurrentWeather(ctx context.Context, locationID string) 
 		logger.Error("读取响应体失败: %v", err)
 		return nil, fmt.Errorf("读取响应体失败: %w", err)
 	}
-	// fmt.Printf("    📡 响应体内容: %s\n", string(body))
 
 	// 解析响应
-	var weatherResp QWeatherCurrentResponse
+	var weatherResp JuheWeatherResponse
 	if err := json.Unmarshal(body, &weatherResp); err != nil {
 		logger.Error("解析天气响应失败: %v", err)
 		return nil, fmt.Errorf("解析天气响应失败: %w", err)
 	}
 
-	// 检查API返回码
-	// fmt.Printf("    📡 天气API返回码: %s\n", weatherResp.Code)
-	if weatherResp.Code != "200" {
-		logger.Error("和风天气API返回错误，代码: %s", weatherResp.Code)
-		return nil, fmt.Errorf("和风天气API返回错误，代码: %s", weatherResp.Code)
+	// 检查API返回码（0 为查询成功）
+	if weatherResp.ErrorCode != 0 {
+		logger.Error("聚合数据API返回错误，错误码: %d，原因: %s", weatherResp.ErrorCode, weatherResp.Reason)
+		return nil, fmt.Errorf("聚合数据API返回错误，错误码: %d，原因: %s", weatherResp.ErrorCode, weatherResp.Reason)
 	}
 
 	return &weatherResp, nil
 }
 
 // formatWeatherData 格式化天气数据为用户友好的格式
-func (w *WeatherTool) formatWeatherData(weatherData *QWeatherCurrentResponse, locationInfo map[string]string) (string, error) {
-	now := weatherData.Now
+func (w *WeatherTool) formatWeatherData(weatherData *JuheWeatherResponse) (string, error) {
+	realtime := weatherData.Result.Realtime
 
-	// 构建格式化的天气信息
+	// 构建实时天气信息
 	result := map[string]interface{}{
-		"城市":     locationInfo["name"],
-		"地区":     fmt.Sprintf("%s, %s", locationInfo["adm2"], locationInfo["adm1"]),
-		"国家":     locationInfo["country"],
-		"观测时间":   now.ObsTime,
-		"温度":     fmt.Sprintf("%s°C", now.Temp),
-		"体感温度":   fmt.Sprintf("%s°C", now.FeelsLike),
-		"天气状况":   now.Text,
-		"风向":     now.WindDir,
-		"风力等级":   fmt.Sprintf("%s级", now.WindScale),
-		"风速":     fmt.Sprintf("%s km/h", now.WindSpeed),
-		"相对湿度":   fmt.Sprintf("%s%%", now.Humidity),
-		"大气压强":   fmt.Sprintf("%s hPa", now.Pressure),
-		"能见度":    fmt.Sprintf("%s km", now.Vis),
-		"云量":     fmt.Sprintf("%s%%", now.Cloud),
-		"当前小时降水": fmt.Sprintf("%s mm", now.Precip),
-		"露点温度":   fmt.Sprintf("%s°C", now.Dew),
-		"数据来源":   "和风天气",
-		"更新时间":   weatherData.UpdateTime,
+		"城市":   weatherData.Result.City,
+		"天气状况": realtime.Info,
+		"温度":   fmt.Sprintf("%s°C", realtime.Temperature),
+		"相对湿度": fmt.Sprintf("%s%%", realtime.Humidity),
+		"风向":   realtime.Direct,
+		"风力":   realtime.Power,
+		"空气质量": realtime.Aqi,
+		"数据来源": "聚合数据",
 	}
+
+	// 构建未来几天天气预报
+	future := make([]map[string]string, 0, len(weatherData.Result.Future))
+	for _, f := range weatherData.Result.Future {
+		future = append(future, map[string]string{
+			"日期": f.Date,
+			"温度": f.Temperature,
+			"天气": f.Weather,
+			"风向": f.Direct,
+		})
+	}
+	result["未来天气"] = future
 
 	// 转换为JSON字符串
 	resultJSON, err := json.MarshalIndent(result, "", "  ")
@@ -356,16 +238,16 @@ func (w *WeatherTool) formatWeatherData(weatherData *QWeatherCurrentResponse, lo
 // ValidateConfig 验证天气工具配置
 func (w *WeatherTool) ValidateConfig() error {
 	if w.apiKey == "" {
-		return fmt.Errorf("和风天气API密钥不能为空")
+		return fmt.Errorf("聚合数据API密钥不能为空")
 	}
 
 	if w.baseURL == "" {
-		return fmt.Errorf("和风天气API基础URL不能为空")
+		return fmt.Errorf("聚合数据API接口地址不能为空")
 	}
 
 	// 检查URL格式
 	if !strings.HasPrefix(w.baseURL, "http://") && !strings.HasPrefix(w.baseURL, "https://") {
-		return fmt.Errorf("和风天气API基础URL格式不正确")
+		return fmt.Errorf("聚合数据API接口地址格式不正确")
 	}
 
 	return nil

@@ -156,8 +156,8 @@ type MCPConfig struct {
 
 // WeatherConfig 天气工具配置
 type WeatherConfig struct {
-	APIKey  string `yaml:"api_key"`  // 和风天气API密钥
-	BaseURL string `yaml:"base_url"` // 和风天气API基础URL
+	APIKey  string `yaml:"api_key"`  // 聚合数据API密钥
+	BaseURL string `yaml:"base_url"` // 聚合数据API接口地址
 }
 
 // IPToolConfig IP工具配置
