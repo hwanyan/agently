@@ -8,12 +8,12 @@ log:
 
 # HTTP 服务配置（grpc-gateway 对外暴露的 REST/SSE 网关）
 http:
-  port: 8081      # 网关端口号
+  port: 8090      # 网关端口号
   host: "0.0.0.0" # 服务监听的主机地址（所有主机）
 
 # gRPC 服务配置（系统内部核心服务层，仅供本机 HTTP 网关回环反向代理，不对外暴露）
 grpc:
-  port: 50051         # gRPC 端口号（留空或 0 则默认取 http.port + 1）
+  port: 50050         # gRPC 端口号（留空或 0 则默认取 http.port + 1）
   host: "127.0.0.1"   # 仅监听回环：外部流量统一经 HTTP 网关进入；无需对外提供原生 gRPC
 
 # 数据库配置（PostgreSQL）
@@ -68,11 +68,11 @@ mcp:
   servers:
     - id: "gold_analysis"
       name: "黄金分析 MCP 服务"
-      base_url: "http://localhost:9090"
+      base_url: "http://localhost:9091"
       api_key: ""
       timeout: 60
     - id: "news_analysis"
       name: "新闻分析 MCP 服务"
-      base_url: "http://localhost:9091"
+      base_url: "http://localhost:9092"
       api_key: ""
       timeout: 60
