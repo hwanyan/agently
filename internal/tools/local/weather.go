@@ -17,8 +17,8 @@ import (
 
 // 工具自注册
 func init() {
-	Register("general", func(cfg *types.Config) types.Tool {
-		return NewWeatherTool(cfg.Tools.Weather.APIKey, cfg.Tools.Weather.BaseURL)
+	Register("general", func(provider types.ConfigProvider) types.Tool {
+		return NewWeatherTool(provider)
 	})
 }
 
@@ -34,11 +34,10 @@ const (
 // WeatherTool 天气查询工具
 // 基于聚合数据（JuHe）simpleWeather API 实现
 type WeatherTool struct {
-	name        string       // 工具名称
-	description string       // 工具描述
-	apiKey      string       // 聚合数据 API 密钥
-	baseURL     string       // 聚合数据 API 接口地址
-	client      *http.Client // HTTP客户端
+	name        string                 // 工具名称
+	description string                 // 工具描述
+	provider    types.ConfigProvider   // 配置提供者：每次 Execute 时读取最新的 API Key / BaseURL（支持热更新）
+	client      *http.Client           // HTTP客户端
 }
 
 // JuheWeatherResponse 聚合数据天气查询响应
@@ -67,17 +66,15 @@ type JuheWeatherResponse struct {
 
 // NewWeatherTool 创建一个新的天气查询工具实例
 // 参数：
-//   - apiKey: 聚合数据 API 密钥
-//   - baseURL: 聚合数据 API 接口地址
+//   - provider: 配置提供者，用于在每次调用时读取最新的 API Key / BaseURL（支持热更新）
 //
 // 返回：
 //   - *WeatherTool: 天气工具实例
-func NewWeatherTool(apiKey, baseURL string) *WeatherTool {
+func NewWeatherTool(provider types.ConfigProvider) *WeatherTool {
 	return &WeatherTool{
 		name:        WeatherToolName,
 		description: WeatherToolDesc,
-		apiKey:      apiKey,
-		baseURL:     baseURL,
+		provider:    provider,
 		client: &http.Client{
 			Timeout: 15 * time.Second, // 设置15秒超时
 		},
@@ -122,8 +119,13 @@ func (w *WeatherTool) Parameters() map[string]interface{} {
 //
 // 实现types.Tool接口
 func (w *WeatherTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	// 每次调用都读取最新配置，天然支持 config.yaml 热更新
+	cfg := w.provider()
+	apiKey := cfg.Tools.Weather.APIKey
+	baseURL := cfg.Tools.Weather.BaseURL
+
 	// 如果没有API密钥，返回错误
-	if w.apiKey == "" {
+	if apiKey == "" {
 		return "", fmt.Errorf("API 密钥为空！")
 	}
 
@@ -134,7 +136,7 @@ func (w *WeatherTool) Execute(ctx context.Context, args map[string]interface{}) 
 	}
 
 	// 查询天气
-	weatherData, err := w.getWeather(ctx, city)
+	weatherData, err := w.getWeather(ctx, city, apiKey, baseURL)
 	if err != nil {
 		return "", fmt.Errorf("获取天气数据失败: %w", err)
 	}
@@ -144,14 +146,14 @@ func (w *WeatherTool) Execute(ctx context.Context, args map[string]interface{}) 
 }
 
 // getWeather 查询指定城市天气信息
-func (w *WeatherTool) getWeather(ctx context.Context, city string) (*JuheWeatherResponse, error) {
+func (w *WeatherTool) getWeather(ctx context.Context, city, apiKey, baseURL string) (*JuheWeatherResponse, error) {
 	// 构建查询参数（city 需要 utf8 urlencode，url.Values 会自动处理）
 	params := url.Values{}
 	params.Add("city", city)
-	params.Add("key", w.apiKey)
+	params.Add("key", apiKey)
 
 	// 拼接完整请求URL
-	fullURL := fmt.Sprintf("%s?%s", w.baseURL, params.Encode())
+	fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
 
 	// 创建HTTP请求
 	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
@@ -235,18 +237,22 @@ func (w *WeatherTool) formatWeatherData(weatherData *JuheWeatherResponse) (strin
 	return string(resultJSON), nil
 }
 
-// ValidateConfig 验证天气工具配置
+// ValidateConfig 验证天气工具配置（校验当前生效的最新配置）
 func (w *WeatherTool) ValidateConfig() error {
-	if w.apiKey == "" {
+	cfg := w.provider()
+	apiKey := cfg.Tools.Weather.APIKey
+	baseURL := cfg.Tools.Weather.BaseURL
+
+	if apiKey == "" {
 		return fmt.Errorf("聚合数据API密钥不能为空")
 	}
 
-	if w.baseURL == "" {
+	if baseURL == "" {
 		return fmt.Errorf("聚合数据API接口地址不能为空")
 	}
 
 	// 检查URL格式
-	if !strings.HasPrefix(w.baseURL, "http://") && !strings.HasPrefix(w.baseURL, "https://") {
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 		return fmt.Errorf("聚合数据API接口地址格式不正确")
 	}
 

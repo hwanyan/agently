@@ -217,6 +217,17 @@ type Config struct {
 	MCP      MCPConfig      `yaml:"mcp"`      // MCP工具配置
 }
 
+// ConfigProvider 配置提供者：返回当前最新生效的配置快照
+//
+// 设计说明：
+//   - 用于支持配置热更新（watch 模式）：组件不在构造时"缓存"某个配置字段的固定值，
+//     而是持有一个 ConfigProvider，每次真正需要用到配置值时才调用它，从而总能拿到
+//     config.yaml 变更后最新生效的值（内存热调整，无需重启进程）
+//   - internal/config.Manager.Get 方法本身即满足该函数签名，可直接作为 ConfigProvider 传递
+//   - 受限于 Go 进程模型，HTTP/gRPC 监听地址、数据库连接池、日志文件路径、MCP 服务列表
+//     等"启动期一次性生效"的配置项不适用该机制，变更后仍需重启进程
+type ConfigProvider func() *Config
+
 // ToolParameter 工具参数定义
 // 用于定义工具参数的JSON Schema
 type ToolParameter struct {

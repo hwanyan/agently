@@ -15,28 +15,29 @@ import (
 )
 
 func main() {
-	// 加载配置
-	cfg := initConfig()
+	// 加载配置（支持热更新：cm.Get 本身就是 ConfigProvider，统一以该接口向下游分发）
+	cm := initConfigManager()
+	defer cm.Close()
 
 	// 初始化日志系统
-	initLogger(cfg)
+	initLogger(cm.Get)
 
-	// 注册全部的 agent
-	agentManager := initAgent(cfg)
+	// 注册全部的 agent（内部用 provider() 取快照做 MCP 启动期校验，并把 provider 传给 LLM 与本地工具）
+	agentManager := initAgent(cm.Get)
 
 	// 初始化数据库和认证服务
-	db, authSvc, sessionStore, messageStore := initDatabase(cfg)
+	db, authSvc, sessionStore, messageStore := initDatabase(cm.Get)
 	defer db.Close()
 
 	// 启动 gRPC 服务与 HTTP 网关
-	startServer(cfg, agentManager, authSvc, sessionStore, messageStore)
+	startServer(cm.Get, agentManager, authSvc, sessionStore, messageStore)
 }
 
 // initAgents 加载 agent
 // 注意：InitAgents 内部会做"配置-Agent 引用"严格校验与 MCP 服务探活，任意一项失败即 fail-fast，
 // 避免出现"启动看似成功，运行时才发现工具为空"的隐性故障
-func initAgent(cfg *types.Config) *agent.Manager {
-	agentManager, err := agents.InitAgents(cfg)
+func initAgent(provider types.ConfigProvider) *agent.Manager {
+	agentManager, err := agents.InitAgents(provider)
 	if err != nil {
 		logger.Error("Agent 初始化失败: %v", err)
 		log.Fatalf("Agent 初始化失败: %v", err)
@@ -44,19 +45,28 @@ func initAgent(cfg *types.Config) *agent.Manager {
 	return agentManager
 }
 
-// initConfig 加载配置
-func initConfig() *types.Config {
-	cfg, err := config.LoadConfiguration("./config.yaml")
+// initConfigManager 创建配置管理器并启动热更新监听（watch 模式）
+//
+// 首次加载失败即 fail-fast；watch 启动失败也视为 fail-fast，避免"看似支持热更新、实际未生效"的隐性故障。
+// config.yaml 后续内容发生变更时，会在内存中原子替换，无需重启进程即可生效（受限于部分启动期
+// 一次性配置项，如监听端口/数据库连接池/日志路径/MCP服务器列表，详见 types.ConfigProvider 的说明）。
+// cm.Get 满足 types.ConfigProvider 签名，可直接作为配置提供者传递给下游组件。
+func initConfigManager() *config.Manager {
+	cm, err := config.NewManager("./config.yaml")
 	if err != nil {
 		logger.Error("加载配置失败: %v", err)
 		log.Fatalf("加载配置失败: %v", err)
 	}
-	return cfg
+	if err := cm.Watch(); err != nil {
+		logger.Error("启动配置热更新监听失败: %v", err)
+		log.Fatalf("启动配置热更新监听失败: %v", err)
+	}
+	return cm
 }
 
 // initLogger 初始化日志系统
-func initLogger(cfg *types.Config) {
-	if err := logger.Init(cfg.Log.FilePath); err != nil {
+func initLogger(provider types.ConfigProvider) {
+	if err := logger.Init(provider().Log.FilePath); err != nil {
 		logger.Error("初始化日志系统失败: %v", err)
 		log.Fatalf("初始化日志系统失败: %v", err)
 	}
@@ -69,8 +79,9 @@ func initLogger(cfg *types.Config) {
 // 由调用方（main）负责在进程退出时调用 db.Close()，
 // 切勿在本函数内使用 defer db.Close()，否则函数返回后连接池立刻被关闭，
 // 业务接口在后续调用 SQL 时会得到 "sql: database is closed" 错误。
-func initDatabase(cfg *types.Config) (db *store.DB, authSvc *auth.Service,
+func initDatabase(provider types.ConfigProvider) (db *store.DB, authSvc *auth.Service,
 	sessionStore *store.SessionStore, messageStore *store.MessageStore) {
+	cfg := provider()
 	var err error
 	if cfg.Database.DSN == "" {
 		logger.Error("未配置数据库 DSN，服务启动失败")
@@ -101,7 +112,7 @@ func initDatabase(cfg *types.Config) (db *store.DB, authSvc *auth.Service,
 
 // startServer 启动 gRPC 服务与 grpc-gateway HTTP 网关
 func startServer(
-	cfg *types.Config,
+	provider types.ConfigProvider,
 	manager *agent.Manager,
 	authSvc *auth.Service,
 	sessionStore *store.SessionStore,
@@ -112,7 +123,7 @@ func startServer(
 		authSvc,
 		sessionStore,
 		messageStore,
-		cfg,
+		provider,
 	)
 	srv.Start()
 	logger.Info("服务启动成功")

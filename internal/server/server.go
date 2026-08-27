@@ -41,19 +41,23 @@ type Server struct {
 }
 
 // NewServer 创建服务编排器
+//
+// 监听地址等属于启动期一次性生效的配置（config.yaml 变更后无法热更新监听端口），
+// 因此本类在 Start() 启动时通过 provider() 取一份当前生效的配置快照并固化到 config 字段，
+// 进程生命周期内监听地址保持一致。provider 由 config.Manager.Get 提供，统一 ConfigProvider 接口。
 func NewServer(
 	manager *agent.Manager,
 	authSvc *auth.Service,
 	sessionStore *store.SessionStore,
 	messageStore *store.MessageStore,
-	config *types.Config,
+	provider types.ConfigProvider,
 ) *Server {
 	return &Server{
 		manager:      manager,
 		authSvc:      authSvc,
 		sessionStore: sessionStore,
 		messageStore: messageStore,
-		config:       config,
+		config:       provider(),
 	}
 }
 

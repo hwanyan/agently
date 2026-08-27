@@ -14,8 +14,14 @@ import (
 )
 
 // 工具自注册
+//
+// 注意：ShortURLTool 当前的 Execute 逻辑并未实际使用 apiKey/baseURL（各 create*URL 方法均硬编码了
+// 外部服务地址），因此此处无需按 ConfigProvider 模式改造为"每次 Execute 时读取最新配置"，
+// 仅需同步 ToolFactory 的签名以保证类型系统一致，若未来需要用到这两个配置项，可参照
+// weather.go/ip.go 的模式改为持有 provider。
 func init() {
-	Register("general", func(cfg *types.Config) types.Tool {
+	Register("general", func(provider types.ConfigProvider) types.Tool {
+		cfg := provider()
 		return NewShortURLTool(cfg.Tools.ShortURL.APIKey, cfg.Tools.ShortURL.BaseURL)
 	})
 }

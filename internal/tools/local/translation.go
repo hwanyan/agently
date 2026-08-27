@@ -14,8 +14,8 @@ import (
 
 // 工具自注册
 func init() {
-	Register("general", func(cfg *types.Config) types.Tool {
-		return NewTranslationTool(cfg.Tools.Translate.APIKey, cfg.Tools.Translate.BaseURL)
+	Register("general", func(provider types.ConfigProvider) types.Tool {
+		return NewTranslationTool(provider)
 	})
 }
 
@@ -30,25 +30,22 @@ const (
 
 // TranslationTool 翻译工具
 type TranslationTool struct {
-	name        string       // 工具名称
-	description string       // 工具描述
-	apiKey      string       // 翻译工具的API密钥
-	baseURL     string       // 翻译工具的基础URL
-	client      *http.Client // HTTP客户端
+	name        string               // 工具名称
+	description string               // 工具描述
+	provider    types.ConfigProvider // 配置提供者：每次 Execute 时读取最新的 API Key / BaseURL（支持热更新）
+	client      *http.Client         // HTTP客户端
 }
 
 // NewTranslationTool 创建翻译工具实例
-// 配置来源：
-//   - 环境变量 TRANSLATE_BASE_URL（可选）
-//   - 环境变量 TRANSLATE_API_KEY（可选）
+// 参数：
+//   - provider: 配置提供者，用于在每次调用时读取最新的 API Key / BaseURL（支持热更新）
 //
-// 若未配置，使用默认公共实例（可能有速率限制）
-func NewTranslationTool(apiKey, baseURL string) *TranslationTool {
+// 若未配置 API Key，使用默认公共实例（可能有速率限制）
+func NewTranslationTool(provider types.ConfigProvider) *TranslationTool {
 	return &TranslationTool{
 		name:        TranslationToolName,
 		description: TranslationToolDesc,
-		apiKey:      apiKey,
-		baseURL:     baseURL,
+		provider:    provider,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -91,6 +88,11 @@ func (t *TranslationTool) Parameters() map[string]interface{} {
 
 // Execute 执行翻译
 func (t *TranslationTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	// 每次调用都读取最新配置，支持 config.yaml 热更新
+	cfg := t.provider()
+	apiKey := cfg.Tools.Translate.APIKey
+	baseURL := cfg.Tools.Translate.BaseURL
+
 	// 解析参数
 	var p struct {
 		Text   string `json:"text"`
@@ -134,12 +136,12 @@ func (t *TranslationTool) Execute(ctx context.Context, args map[string]interface
 	} else {
 		payload["source"] = "auto"
 	}
-	if t.apiKey != "" {
-		payload["api_key"] = t.apiKey
+	if apiKey != "" {
+		payload["api_key"] = apiKey
 	}
 
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, "POST", t.baseURL+"/translate", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/translate", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("创建请求失败: %w", err)
 	}
@@ -171,7 +173,7 @@ func (t *TranslationTool) Execute(ctx context.Context, args map[string]interface
 		"目标语言": p.Target,
 		"原文":   p.Text,
 		"译文":   result.TranslatedText,
-		"服务":   t.baseURL,
+		"服务":   baseURL,
 	}
 	b, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {

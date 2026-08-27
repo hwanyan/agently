@@ -3,6 +3,7 @@ module github.com/hwanyan/agently
 go 1.25.0
 
 require (
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/lib/pq v1.12.3

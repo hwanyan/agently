@@ -18,8 +18,8 @@ import (
 
 // 工具自注册
 func init() {
-	Register("general", func(cfg *types.Config) types.Tool {
-		return NewIPTool(cfg.Tools.IP.AccessKey)
+	Register("general", func(provider types.ConfigProvider) types.Tool {
+		return NewIPTool(provider)
 	})
 }
 
@@ -37,11 +37,11 @@ const (
 
 // ipapi IP信息查询工具
 type IPTool struct {
-	name        string       // 工具名称
-	description string       // 工具描述
-	accessKey   string       // API访问密钥
-	baseURL     string       // API基础URL
-	client      *http.Client // HTTP客户端
+	name        string               // 工具名称
+	description string               // 工具描述
+	provider    types.ConfigProvider // 配置提供者：每次 Execute 时读取最新的 access key（支持热更新）
+	baseURL     string               // API基础URL
+	client      *http.Client         // HTTP客户端
 }
 
 // IPQueryResponse IP查询响应结构 (api.ipapi.com)
@@ -107,15 +107,15 @@ type IPQueryResponse struct {
 // NewIPTool 创建一个新的IP查询工具实例
 //
 // 参数：
-//   - accessKey: API访问密钥
+//   - provider: 配置提供者，用于在每次调用时读取最新的 access key（支持热更新）
 //
 // 返回：
 //   - *IPTool: IP查询工具实例
-func NewIPTool(accessKey string) *IPTool {
+func NewIPTool(provider types.ConfigProvider) *IPTool {
 	return &IPTool{
 		name:        IPToolName,
 		description: IPToolDesc,
-		accessKey:   accessKey,
+		provider:    provider,
 		baseURL:     IPAPIBaseURL,
 		client: &http.Client{
 			Timeout: 10 * time.Second, // 设置10秒超时
@@ -161,6 +161,9 @@ func (i *IPTool) Parameters() map[string]interface{} {
 //
 // 实现types.Tool接口
 func (i *IPTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	// 每次调用都读取最新配置，支持 config.yaml 热更新
+	accessKey := i.provider().Tools.IP.AccessKey
+
 	// 提取目标IP或域名
 	var target string
 	if targetVal, ok := args["target"]; ok {
@@ -171,7 +174,7 @@ func (i *IPTool) Execute(ctx context.Context, args map[string]interface{}) (stri
 
 	// 如果没有提供目标，查询当前公网IP
 	if target == "" {
-		return i.queryCurrentIP(ctx)
+		return i.queryCurrentIP(ctx, accessKey)
 	}
 
 	// 验证输入格式
@@ -180,7 +183,7 @@ func (i *IPTool) Execute(ctx context.Context, args map[string]interface{}) (stri
 	}
 
 	// 查询指定IP或域名
-	return i.queryIP(ctx, target)
+	return i.queryIP(ctx, target, accessKey)
 }
 
 // validateTarget 验证输入的IP地址或域名格式
@@ -200,17 +203,17 @@ func (i *IPTool) validateTarget(target string) error {
 }
 
 // queryCurrentIP 查询当前公网IP信息
-func (i *IPTool) queryCurrentIP(ctx context.Context) (string, error) {
+func (i *IPTool) queryCurrentIP(ctx context.Context, accessKey string) (string, error) {
 	// 构建查询URL（查询当前公网IP）
-	url := fmt.Sprintf("%scheck?access_key=%s", i.baseURL, i.accessKey)
+	url := fmt.Sprintf("%scheck?access_key=%s", i.baseURL, accessKey)
 
 	return i.performQuery(ctx, url, "当前公网IP")
 }
 
 // queryIP 查询指定IP或域名的信息
-func (i *IPTool) queryIP(ctx context.Context, target string) (string, error) {
+func (i *IPTool) queryIP(ctx context.Context, target, accessKey string) (string, error) {
 	// 构建查询URL
-	url := fmt.Sprintf("%s%s?access_key=%s", i.baseURL, target, i.accessKey)
+	url := fmt.Sprintf("%s%s?access_key=%s", i.baseURL, target, accessKey)
 
 	return i.performQuery(ctx, url, target)
 }

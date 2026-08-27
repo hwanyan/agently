@@ -18,25 +18,19 @@ import (
 // OpenAIClient OpenAI客户端
 // 实现了types.LLMClient接口，用于与OpenAI API通信
 type OpenAIClient struct {
-	apiKey  string       // API密钥
-	baseURL string       // API基础URL
-	model   string       // 使用的模型名称
-	client  *http.Client // HTTP客户端
+	provider types.ConfigProvider // 配置提供者：每次请求时读取最新的 API Key / Model / BaseURL（支持热更新）
+	client   *http.Client         // HTTP客户端
 }
 
 // NewOpenAIClient 创建一个新的OpenAI客户端
 // 参数：
-//   - apiKey: OpenAI API密钥
-//   - model: 要使用的模型名称（如gpt-3.5-turbo、gpt-4等）
-//   - baseURL: API基础URL（可选，默认使用OpenAI官方API）
+//   - provider: 配置提供者，用于在每次调用时读取最新的 LLM 配置（API Key/Model/BaseURL），支持热更新
 //
 // 返回：
 //   - *OpenAIClient: OpenAI客户端实例
-func NewOpenAIClient(apiKey, model, baseURL string) *OpenAIClient {
+func NewOpenAIClient(provider types.ConfigProvider) *OpenAIClient {
 	return &OpenAIClient{
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		model:   model,
+		provider: provider,
 		client: &http.Client{
 			Timeout: 600 * time.Second, // 设置 600 秒超时
 		},
@@ -53,11 +47,14 @@ func NewOpenAIClient(apiKey, model, baseURL string) *OpenAIClient {
 //   - *types.Message: LLM的响应消息
 //   - error: 可能的错误
 func (c *OpenAIClient) Chat(ctx context.Context, messages []types.Message, tools []types.Tool) (*types.Message, error) {
+	// 每次调用都读取最新的 LLM 配置，支持 config.yaml 热更新
+	cfg := c.provider().LLM
+
 	// 构建请求体
-	reqBody := c.buildChatRequest(messages, tools)
+	reqBody := c.buildChatRequest(cfg.Model, messages, tools)
 
 	// 发送请求
-	respBody, err := c.sendRequest(ctx, "/chat/completions", reqBody)
+	respBody, err := c.sendRequest(ctx, cfg.BaseURL, cfg.APIKey, "/chat/completions", reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("发送请求失败: %w", err)
 	}
@@ -76,8 +73,11 @@ func (c *OpenAIClient) Chat(ctx context.Context, messages []types.Message, tools
 //   - <-chan string: 流式响应的通道
 //   - error: 可能的错误
 func (c *OpenAIClient) ChatStream(ctx context.Context, messages []types.Message, tools []types.Tool) (<-chan types.StreamChunk, error) {
+	// 每次调用都读取最新的 LLM 配置，支持 config.yaml 热更新
+	cfg := c.provider().LLM
+
 	// 构建请求体（启用流式响应）
-	reqBody := c.buildChatRequest(messages, tools)
+	reqBody := c.buildChatRequest(cfg.Model, messages, tools)
 	reqBody["stream"] = true
 
 	// 创建响应通道
@@ -88,7 +88,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, messages []types.Message,
 		defer close(responseChan)
 
 		// 发送流式请求
-		if err := c.sendStreamRequest(ctx, "/chat/completions", reqBody, responseChan); err != nil {
+		if err := c.sendStreamRequest(ctx, cfg.BaseURL, cfg.APIKey, "/chat/completions", reqBody, responseChan); err != nil {
 			// 发送错误信息到通道
 			responseChan <- types.StreamChunk{Content: fmt.Sprintf("错误: %v", err)}
 		}
@@ -98,7 +98,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, messages []types.Message,
 }
 
 // buildChatRequest 构建聊天请求体
-func (c *OpenAIClient) buildChatRequest(messages []types.Message, tools []types.Tool) map[string]interface{} {
+func (c *OpenAIClient) buildChatRequest(model string, messages []types.Message, tools []types.Tool) map[string]interface{} {
 	// 转换消息格式
 	apiMessages := make([]map[string]interface{}, 0, len(messages))
 	for _, msg := range messages {
@@ -133,7 +133,7 @@ func (c *OpenAIClient) buildChatRequest(messages []types.Message, tools []types.
 
 	// 构建基础请求体
 	reqBody := map[string]interface{}{
-		"model":    c.model,
+		"model":    model,
 		"messages": apiMessages,
 	}
 
@@ -158,7 +158,7 @@ func (c *OpenAIClient) buildChatRequest(messages []types.Message, tools []types.
 }
 
 // sendRequest 发送HTTP请求
-func (c *OpenAIClient) sendRequest(ctx context.Context, endpoint string, reqBody map[string]interface{}) ([]byte, error) {
+func (c *OpenAIClient) sendRequest(ctx context.Context, baseURL, apiKey, endpoint string, reqBody map[string]interface{}) ([]byte, error) {
 	// 序列化请求体
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -166,14 +166,14 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, endpoint string, reqBody
 	}
 
 	// 创建HTTP请求
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("创建HTTP请求失败: %w", err)
 	}
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	// 发送请求
 	resp, err := c.client.Do(req)
@@ -197,7 +197,7 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, endpoint string, reqBody
 }
 
 // sendStreamRequest 发送流式HTTP请求
-func (c *OpenAIClient) sendStreamRequest(ctx context.Context, endpoint string, reqBody map[string]interface{}, responseChan chan<- types.StreamChunk) error {
+func (c *OpenAIClient) sendStreamRequest(ctx context.Context, baseURL, apiKey, endpoint string, reqBody map[string]interface{}, responseChan chan<- types.StreamChunk) error {
 	// 序列化请求体
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -205,14 +205,14 @@ func (c *OpenAIClient) sendStreamRequest(ctx context.Context, endpoint string, r
 	}
 
 	// 创建HTTP请求
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("创建HTTP请求失败: %w", err)
 	}
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "text/event-stream")
 
 	// 发送请求

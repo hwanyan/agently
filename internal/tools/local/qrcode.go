@@ -14,8 +14,10 @@ import (
 )
 
 // 工具自注册
+//
+// 注意：QRCodeTool 不依赖任何配置，此处仅需同步 ToolFactory 的签名。
 func init() {
-	Register("general", func(cfg *types.Config) types.Tool {
+	Register("general", func(_ types.ConfigProvider) types.Tool {
 		return NewQRCodeTool()
 	})
 }

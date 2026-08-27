@@ -7,8 +7,9 @@ import (
 )
 
 // ToolFactory 工具工厂函数类型
-// 接收全局配置，返回工具实例
-type ToolFactory func(cfg *types.Config) types.Tool
+// 接收配置提供者（而非固定的配置快照），使工具可以在每次真正使用配置值时
+// （通常是 Execute 内部）读取到 config.yaml 热更新后的最新值，返回工具实例
+type ToolFactory func(provider types.ConfigProvider) types.Tool
 
 // toolEntry 工具注册条目
 type toolEntry struct {
@@ -33,15 +34,15 @@ func Register(group string, factory ToolFactory) {
 // GetToolsByGroup 按工具组获取所有工具实例
 // 参数：
 //   - group: 工具组标识
-//   - cfg: 全局配置（用于传递 API Key 等配置）
+//   - provider: 配置提供者（用于让工具在真正使用时读取到最新的 API Key 等配置）
 //
 // 返回：
 //   - []types.Tool: 该组下所有工具实例
-func GetToolsByGroup(group string, cfg *types.Config) []types.Tool {
+func GetToolsByGroup(group string, provider types.ConfigProvider) []types.Tool {
 	var tools []types.Tool
 	for _, entry := range globalRegistry {
 		if entry.group == group {
-			tools = append(tools, entry.factory(cfg))
+			tools = append(tools, entry.factory(provider))
 		}
 	}
 	return tools

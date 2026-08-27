@@ -107,12 +107,18 @@ func parseAgentPrompt(agentID string, raw []byte) (agent.AgentInfo, bool) {
 // InitAgents 初始化并注册全部 Agent，返回 Agent 管理器
 //
 // 启动期会做如下校验（任意一项失败即返回 error，由调用方决定 fail-fast）：
-//  1. prompt.yaml 中声明的 mcp_servers ID 必须在 cfg.MCP.Servers 中存在
-//  2. cfg.MCP.Servers 中所有 ID 必须唯一且非空
+//  1. prompt.yaml 中声明的 mcp_servers ID 必须在配置的 MCP.Servers 中存在
+//  2. 配置的 MCP.Servers 中所有 ID 必须唯一且非空
 //  3. 被引用的 MCP 服务必须能成功 ListTools（探活）
-func InitAgents(cfg *types.Config) (*agent.Manager, error) {
+//
+// 参数：
+//   - provider: 配置提供者。本函数整体是启动期一次性执行，因此先调用 provider() 获取一份
+//     当前生效的配置快照用于 MCP 校验/探活（这些逻辑不支持热更新）；同时把 provider 原样传递给
+//     LLM 客户端与本地工具，使其在真正使用配置时（Chat/Execute 内部）读取到 config.yaml 热更新
+//     后的最新值。
+func InitAgents(provider types.ConfigProvider) (*agent.Manager, error) {
 	// 1. 配置自身校验：MCP server 的 ID 必须唯一且非空
-	if err := validateMCPServersConfig(cfg); err != nil {
+	if err := validateMCPServersConfig(provider); err != nil {
 		return nil, err
 	}
 
@@ -120,19 +126,19 @@ func InitAgents(cfg *types.Config) (*agent.Manager, error) {
 	prompts := initPromptMapping()
 
 	// 3. 校验 Agent 的工具引用是否都能在配置中找到
-	if err := validateAgentToolsRef(prompts, cfg); err != nil {
+	if err := validateAgentToolsRef(prompts, provider); err != nil {
 		return nil, err
 	}
 
 	// 4. 探活：所有被引用的 MCP 服务必须能成功 ListTools
-	mcpToolsByServerID, err := discoverAllReferencedMCPTools(prompts, cfg)
+	mcpToolsByServerID, err := discoverAllReferencedMCPTools(prompts, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	// 5. 创建 Manager 与 LLM 客户端
+	// 5. 创建 Manager 与 LLM 客户端（LLM 客户端持有 provider，支持热更新）
 	m := agent.NewManager()
-	llmClient := llm.NewClientFromConfig(cfg)
+	llmClient := llm.NewClientFromConfig(provider)
 
 	// 6. 生成业务 Agent 列表描述（用于路由 Agent 的 Prompt 模板变量替换）
 	agentsDescription := generateAgentsDescription(prompts)
@@ -148,7 +154,7 @@ func InitAgents(cfg *types.Config) (*agent.Manager, error) {
 		// 创建 Agent 实例
 		agentInstance := agent.NewBasicAgent(agentInfo.Name, agentInfo.Description, llmClient, agentInfo.Prompt)
 		// 按声明的 tools 注入工具
-		attachTools(agentInstance, agentInfo, cfg, mcpToolsByServerID)
+		attachTools(agentInstance, agentInfo, provider, mcpToolsByServerID)
 		// 注册到管理器
 		m.Register(agentInstance, &agentInfo)
 	}
@@ -159,17 +165,18 @@ func InitAgents(cfg *types.Config) (*agent.Manager, error) {
 // attachTools 按 AgentInfo.Tools 声明，给 Agent 注入本地工具组与 MCP 工具
 //
 // 注意：
-//   - 本地工具组通过 internal/tools 包中的注册分发函数完成
+//   - 本地工具组通过 internal/tools 包中的注册分发函数完成，传递 provider 而非固定配置，
+//     使本地工具在 Execute 时能读取到 config.yaml 热更新后的最新值
 //   - MCP 工具直接复用 discoverAllReferencedMCPTools 的探活结果，避免重复发现
 func attachTools(
 	aiAgent *agent.BasicAgent,
 	info agent.AgentInfo,
-	cfg *types.Config,
+	provider types.ConfigProvider,
 	mcpToolsByServerID map[string][]types.Tool,
 ) {
 	// 1. 本地工具组
 	for _, group := range info.Tools.LocalGroups {
-		tools.SetupLocalToolGroup(aiAgent, cfg, group)
+		tools.SetupLocalToolGroup(aiAgent, provider, group)
 	}
 	// 2. MCP 工具（按 ID 引用）
 	for _, serverID := range info.Tools.MCPServers {
@@ -186,8 +193,9 @@ func attachTools(
 	}
 }
 
-// validateMCPServersConfig 校验 cfg.MCP.Servers 自身：ID 必须唯一且非空
-func validateMCPServersConfig(cfg *types.Config) error {
+// validateMCPServersConfig 校验配置的 MCP.Servers 自身：ID 必须唯一且非空
+func validateMCPServersConfig(provider types.ConfigProvider) error {
+	cfg := provider()
 	seen := map[string]struct{}{}
 	for i, s := range cfg.MCP.Servers {
 		if strings.TrimSpace(s.ID) == "" {
@@ -201,8 +209,9 @@ func validateMCPServersConfig(cfg *types.Config) error {
 	return nil
 }
 
-// validateAgentToolsRef 校验所有 Agent 在 prompt.yaml 中声明的 mcp_servers 是否都能在 cfg 中找到
-func validateAgentToolsRef(prompts map[string]agent.AgentInfo, cfg *types.Config) error {
+// validateAgentToolsRef 校验所有 Agent 在 prompt.yaml 中声明的 mcp_servers 是否都能在配置中找到
+func validateAgentToolsRef(prompts map[string]agent.AgentInfo, provider types.ConfigProvider) error {
+	cfg := provider()
 	available := map[string]struct{}{}
 	for _, s := range cfg.MCP.Servers {
 		available[s.ID] = struct{}{}
@@ -223,8 +232,9 @@ func validateAgentToolsRef(prompts map[string]agent.AgentInfo, cfg *types.Config
 // 未被任何 Agent 引用的 MCP 服务不会被探活，避免无意义的网络调用。
 func discoverAllReferencedMCPTools(
 	prompts map[string]agent.AgentInfo,
-	cfg *types.Config,
+	provider types.ConfigProvider,
 ) (map[string][]types.Tool, error) {
+	cfg := provider()
 	// 收集所有被引用过的 server id
 	referenced := map[string]struct{}{}
 	for _, info := range prompts {

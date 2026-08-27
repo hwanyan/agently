@@ -23,36 +23,7 @@ type PromptConfig struct {
 	} `yaml:"settings"`
 }
 
-// LoadConfiguration 加载整个项目所需的配置
-// 说明：
-//   - 从配置文件加载配置
-//   - 加载配置后，会进行验证，如果验证失败，则会返回错误
-//
-// 返回：
-//   - *types.Config: 加载的配置
-//   - error: 可能的错误
-func LoadConfiguration(configPath string) (*types.Config, error) {
-	if configPath == "" {
-		configPath = "./config.yaml"
-	}
-	cfg, err := loadConfigFromFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("加载配置文件失败: %w", err)
-	}
-	return cfg, nil
-}
-
 // loadConfigFromFile 从YAML文件加载配置
-// 参数：
-//   - configPath: 配置文件路径
-//
-// 说明：
-//
-//   - 加载配置后，会进行验证，如果验证失败，则会返回错误
-//
-// 返回：
-//   - *types.Config: 加载的配置
-//   - error: 可能的错误
 func loadConfigFromFile(configPath string) (*types.Config, error) {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
