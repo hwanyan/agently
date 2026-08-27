@@ -4,12 +4,12 @@
 
 # 日志配置
 log:
-  file_path: "../../logs/agently" # 日志文件的路径和前缀
+  file_path: "../../logs/agently"  # 日志文件的路径和前缀
 
 # HTTP 服务配置（grpc-gateway 对外暴露的 REST/SSE 网关）
 http:
-  port: 8090      # 网关端口号
-  host: "0.0.0.0" # 服务监听的主机地址（所有主机）
+  port: 8090          # 网关端口号
+  host: "0.0.0.0"     # 服务监听的主机地址（所有主机）
 
 # gRPC 服务配置（系统内部核心服务层，仅供本机 HTTP 网关回环反向代理，不对外暴露）
 grpc:
@@ -25,16 +25,16 @@ database:
 
 # JWT 认证配置
 jwt:
-  secret: "*******"          # TODO: 请填写 JWT 签名密钥（生产环境必须设置强随机值）
+  secret: "*******"    # TODO: 请填写 JWT 签名密钥（生产环境必须设置强随机值）
   expire_hour: 72
 
 # SMTP 邮件配置（用于发送验证码）
 smtp:
-  host: ""                   # SMTP 服务器地址，如 smtp.qq.com（留空则验证码打印到控制台）
-  port: 587                  # SMTP 端口，587(TLS) 或 465(SSL)
-  username: ""               # SMTP 登录用户名（通常是邮箱地址）
-  password: ""               # SMTP 登录密码或授权码
-  from: ""                   # 发件人地址（可选，默认使用 username）
+  host: ""             # SMTP 服务器地址，如 smtp.qq.com（留空则验证码打印到控制台）
+  port: 587            # SMTP 端口，587(TLS) 或 465(SSL)
+  username: ""         # SMTP 登录用户名（通常是邮箱地址）
+  password: ""         # SMTP 登录密码或授权码
+  from: ""             # 发件人地址（可选，默认使用 username）
 
 # LLM 大语言模型配置
 llm:
@@ -71,6 +71,7 @@ mcp:
       base_url: "http://localhost:9091"
       api_key: ""
       timeout: 60
+
     - id: "news_analysis"
       name: "新闻分析 MCP 服务"
       base_url: "http://localhost:9092"
