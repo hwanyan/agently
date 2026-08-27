@@ -2,19 +2,19 @@
 
 一个基于 Go 实现的多 Agent AI 系统，支持**意图自动路由**、流式对话、自动工具调用、MCP 协议集成、日志系统和灵活的 YAML 配置管理。
 
-> 🔄 **架构升级（gRPC 化重构）**：自本版本起，系统的路由层已全面收敛到 **gRPC**。所有对外能力以 gRPC 服务（`.proto`）定义，并通过 **grpc-gateway** 在同一 HTTP 端口反向代理，**对外的 REST 路径与 SSE 事件格式保持完全兼容**。详见 [gRPC 架构与迁移说明](#-grpc-架构与迁移说明)。
+> 🔄 **架构升级（gRPC 化重构）**：系统的路由层已全面收敛到 **gRPC**。所有对外能力以 gRPC 服务（`.proto`）定义，并通过 **grpc-gateway** 在同一 HTTP 端口反向代理，**对外的 REST 路径与 SSE 事件格式保持完全兼容**。详见 [gRPC 架构与迁移说明](#-grpc-架构与迁移说明)。
 
 ## ✨ 核心特性
 
 - 🚀 **gRPC 优先** — 全部路由以 gRPC 服务定义（Protobuf 契约），grpc-gateway 同步暴露兼容旧版的 REST + SSE
-- 🤖 **多Agent架构** — 启动时注册全部Agent，支持按需切换
+- 🤖 **多Agent架构** — 启动时自动扫描并注册全部Agent，支持按需切换
 - 🔀 **意图自动路由** — 内置路由Agent（intention_router），自动分析用户意图并分发到合适的专业Agent
 - 🔁 **会话 Agent 自动同步** — 自动路由命中与会话当前 `agent_id` 不一致时，后端会同步更新会话的主 Agent，前端按 Agent 分类时可正确归组
 - 🔧 **自动工具调用** — Agent 自动识别意图并调用外部工具完成任务
 - 🌊 **流式响应** — 支持流式输出，实时展示 AI 回答，流式模式下同样支持工具调用
 - 🔌 **MCP协议支持** — 通过 Model Context Protocol 动态发现和调用远程工具服务
 - 📝 **日志系统** — 统一的日志管理（INFO/ERROR/WARNING → 文件）
-- ⚙️ **YAML 配置** — 统一使用 `config.yaml` 管理所有配置项
+- ⚙️ **YAML 配置** — 统一使用仓库根目录下的 `config.yaml` 管理所有配置项
 - 🔒 **并发安全** — 使用互斥锁 + channel 机制保护对话历史的并发访问
 - 💬 **对话管理** — 每个Agent拥有独立的对话历史和上下文维护
 - 🔑 **用户认证** — JWT 鉴权，支持注册/登录，所有业务接口均需登录态
@@ -52,83 +52,96 @@
 
 ```
 agently/
-├── cmd/
-│   ├── config/
-│   │   └── config.yaml                  # 统一配置文件（YAML，含 http 网关端口与 grpc 端口）
-│   └── server/
-│       └── main.go                       # 程序入口（精简，仅负责启动编排）
-├── pb/                                   # 🆕 gRPC 契约与生成代码
+├── main.go                                # 🆕 程序入口（已从 cmd/server 移至仓库根目录）
+├── bd.sh                                  # 🆕 交叉编译脚本（GOOS=linux GOARCH=amd64 go build main.go）
+├── config.yaml                            # 🆕 统一配置文件（已从 cmd/config/config.yaml 移至仓库根目录，且不再嵌套 config/ 子目录）
+├── pb/                                     # gRPC 契约与生成代码
 │   ├── proto/
-│   │   └── agently.proto                 # 原生 proto：全部 gRPC 服务契约（Auth/Agent/Session，含 Chat 流式）
-│   ├── gen/                              # protoc 生成产物（仅生成代码，勿手改）
-│   │   ├── agently.pb.go                 # 消息类型
-│   │   ├── agently_grpc.pb.go            # gRPC 服务端/客户端桩代码
-│   │   ├── agently.pb.gw.go              # grpc-gateway 反向代理（REST 映射）
-│   │   └── agently.swagger.json          # 🆕 由 proto 自动生成的 OpenAPI(swagger) 文档
-│   ├── api/google/api/                   # 供 protoc 本地解析的 google.api HTTP 注解（annotations/http.proto）
-│   └── gen.sh                            # 🆕 一键生成脚本（protoc + go/go-grpc/grpc-gateway/openapiv2 插件）
+│   │   └── agently.proto                  # 原生 proto：全部 gRPC 服务契约（Auth/Agent/Session，含 Chat 流式）
+│   ├── gen/                                # protoc 生成产物（仅生成代码，勿手改）
+│   │   ├── agently.pb.go                  # 消息类型
+│   │   ├── agently_grpc.pb.go             # gRPC 服务端/客户端桩代码
+│   │   ├── agently.pb.gw.go               # grpc-gateway 反向代理（REST 映射）
+│   │   └── agently.swagger.json           # 由 proto 自动生成的 OpenAPI(swagger) 文档
+│   ├── api/google/api/                     # 供 protoc 本地解析的 google.api HTTP 注解（annotations/http.proto）
+│   └── gen.sh                              # 一键生成脚本（protoc + go/go-grpc/grpc-gateway/openapiv2 插件）
 ├── internal/
 │   ├── agent/
-│   │   ├── agent.go                      # Agent 核心引擎（对话循环、工具调用、并发控制）
-│   │   └── manager.go                    # Agent 管理器（切换、意图路由、列表查询）
-│   ├── agents/                           # Agent 定义层（统一注册 + 各 Agent 的 Prompt）
-│   │   ├── embed.go                      # 通过 embed.FS 嵌入所有 prompt.yaml 到二进制
-│   │   ├── registry.go                   # Agent 统一编排（解析 prompt、配置校验、MCP 探活、工具注入）
-│   │   ├── general/prompt.yaml           # 通用工具助手 Prompt
-│   │   ├── gold_analysis/prompt.yaml     # 黄金分析助手 Prompt（依赖 mcp_servers: [gold_analysis]）
-│   │   ├── news_analysis/prompt.yaml     # 新闻分析助手 Prompt（依赖 mcp_servers: [news_analysis]）
-│   │   └── intention_router/prompt.yaml  # 意图路由 Agent Prompt
+│   │   ├── agent.go                        # Agent 核心引擎（对话循环、工具调用、并发控制）
+│   │   └── manager.go                      # Agent 管理器（切换、意图路由、列表查询）
+│   ├── agents/                             # Agent 定义层（统一注册 + 各 Agent 的 Prompt）
+│   │   ├── embed.go                        # 通过 embed.FS 嵌入所有 prompt.yaml 到二进制
+│   │   ├── registry.go                     # Agent 统一编排（解析 prompt、配置校验、MCP 探活、工具注入）
+│   │   ├── general/prompt.yaml             # 通用工具助手 Prompt
+│   │   ├── gold_analysis/prompt.yaml       # 黄金分析助手 Prompt（依赖 mcp_servers: [gold_analysis]）
+│   │   ├── news_analysis/prompt.yaml       # 新闻分析助手 Prompt（依赖 mcp_servers: [news_analysis]）
+│   │   └── intention_router/prompt.yaml    # 意图路由 Agent Prompt
 │   ├── auth/
-│   │   ├── auth.go                       # 用户认证服务（注册、登录、JWT 签发与验证）
-│   │   ├── email_verify.go               # 邮箱验证业务编排
-│   │   └── mailer.go                     # SMTP 邮件发送器
+│   │   ├── auth.go                         # 用户认证服务（注册、登录、JWT 签发与验证）
+│   │   ├── email_verify.go                 # 邮箱验证业务编排
+│   │   └── mailer.go                       # SMTP 邮件发送器
 │   ├── config/
-│   │   └── config.go                     # 配置加载与验证
-│   ├── server/                           # 🆕 gRPC 服务实现 + 网关编排（取代旧 internal/http 与 middleware）
-│   │   ├── server.go                     # gRPC 服务与 grpc-gateway 网关启动编排、SSE 对话透传、统一错误处理、CORS
-│   │   ├── interceptor.go                # JWT 鉴权拦截器（Unary + Stream；鉴权策略由 proto 方法选项驱动）
-│   │   ├── context.go                    # 用户信息的 context 注入/读取
-│   │   ├── convert.go                    # 领域模型 → pb 消息 的转换
-│   │   ├── auth_service.go               # AuthService gRPC 实现（注册/登录/发码）
-│   │   ├── agent_service.go              # AgentService gRPC 实现（列表/工具/切换）
-│   │   └── session_service.go            # SessionService gRPC 实现（会话 CRUD + Chat 流式）
-│   ├── llm/                              # LLM 客户端（openai.go / schema.go / stream_scanner.go）
+│   │   └── config.go                       # 配置加载与验证
+│   ├── server/                             # gRPC 服务实现 + 网关编排
+│   │   ├── server.go                       # gRPC 服务与 grpc-gateway 网关启动编排、SSE 对话透传、统一错误处理、CORS
+│   │   ├── interceptor.go                  # JWT 鉴权拦截器（Unary + Stream；鉴权策略由 proto 方法选项驱动）
+│   │   ├── context.go                      # 用户信息的 context 注入/读取
+│   │   ├── convert.go                      # 领域模型 → pb 消息 的转换
+│   │   ├── auth_service.go                 # AuthService gRPC 实现（注册/登录/发码）
+│   │   ├── agent_service.go                # AgentService gRPC 实现（列表/工具/切换）
+│   │   └── session_service.go              # SessionService gRPC 实现（会话 CRUD + Chat 流式）
+│   ├── llm/                                # LLM 客户端
+│   │   ├── factory.go                      # 根据配置构造 LLM 客户端（NewClientFromConfig）
+│   │   ├── openai.go                       # OpenAI 协议客户端实现
+│   │   ├── schema.go                       # 请求/响应结构定义
+│   │   └── stream_scanner.go                # 流式响应解析
 │   ├── logger/
-│   │   └── logger.go                     # 日志系统（INFO/ERROR/WARNING → 文件）
-│   ├── store/                            # 数据访问层（db/user/session/message/email_verification）
-│   └── tools/                            # 本地工具（插件化自注册）与 MCP 工具模块
+│   │   └── logger.go                       # 日志系统（INFO/ERROR/WARNING → 按日期分文件）
+│   ├── store/                               # 数据访问层
+│   │   ├── db.go                            # 数据库连接池封装
+│   │   ├── user.go                          # 用户表访问
+│   │   ├── session.go                       # 会话表访问
+│   │   ├── message.go                       # 消息表访问
+│   │   └── email_verification.go            # 邮箱验证码表访问
+│   └── tools/
+│       ├── setup.go                         # 本地工具组注入入口（SetupLocalToolGroup）
+│       ├── local/                           # 本地工具（插件化自注册）
+│       │   ├── registry.go                  # 全局工具注册表（Register / GetToolsByGroup）
+│       │   ├── weather.go / ip.go / qrcode.go / translation.go / textprocessor.go / shorturl.go
+│       └── mcp/                             # MCP 客户端与工具适配
+│           ├── client.go                    # MCP 协议客户端（tools/list、tools/call）
+│           └── adapter.go                   # 将 MCP 工具适配为 types.Tool
 ├── pkg/
 │   ├── types/
-│   │   └── types.go                      # 公共类型定义（含 HTTPConfig / GRPCConfig）
+│   │   └── types.go                        # 公共类型定义（Config / HTTPConfig / GRPCConfig 等）
 │   └── utils/
-│       └── utils.go                      # 工具函数
+│       └── utils.go                         # 工具函数
 ├── scripts/
-│   └── 001_create_tables.sql             # 数据库建表 SQL（users / sessions / messages）
-├── logs/                                 # 运行日志输出
-├── REFERENCE/                            # 参考文档
+│   ├── 000_init_db.sql                     # 🆕 初始化数据库与用户（超级用户执行，创建 agentlydb）
+│   └── 001_create_tables.sql               # 建表 SQL（users / sessions / messages / email_verifications）
 ├── go.mod
 ├── go.sum
 └── README.md
 ```
 
-> **已移除**：`internal/http/http.go`（手写的 `net/http` 路由层）与 `internal/middleware/auth.go`（HTTP JWT 中间件）。它们的职责已分别由 grpc-gateway + gRPC 服务实现、以及 gRPC 鉴权拦截器取代。
+> **已移除**：原 `cmd/server/`、`cmd/config/` 目录层级，程序入口 `main.go` 与配置文件 `config.yaml` 现均**直接位于仓库根目录**（配置文件不再嵌套 `config/` 子目录）；`REFERENCE/` 参考文档目录已删除。历史上的 `internal/http/http.go`（手写的 `net/http` 路由层）与 `internal/middleware/auth.go`（HTTP JWT 中间件）也已移除，职责分别由 grpc-gateway + gRPC 服务实现、以及 gRPC 鉴权拦截器取代。
 
 ## 🚀 快速开始
 
 ### 1. 环境要求
 
-- Go 1.24+
+- Go 1.25+
 - PostgreSQL 16+（含 pgvector 扩展）
 - SMTP 邮件服务（必配，用于发送注册验证码）
 - 网络连接（访问 LLM API 和工具 API）
-- （可选）MCP 工具服务端（黄金分析助手需要）
+- （可选）MCP 工具服务端（黄金分析助手、新闻分析助手需要）
 - （仅在需要**重新生成** gRPC 代码/接口文档时）`protoc` 及以下插件：`protoc-gen-go`、`protoc-gen-go-grpc`、`protoc-gen-grpc-gateway`、`protoc-gen-openapiv2`。生成产物已随仓库提交，普通运行无需安装这些工具。
 
 ### 2. 安装依赖
 
 ```bash
 git clone <repository-url>
-cd agent-hwan
+cd agently
 go mod tidy
 ```
 
@@ -137,29 +150,24 @@ go mod tidy
 需要 PostgreSQL 16+，并安装 pgvector 扩展：
 
 ```bash
-# 以超级用户连接数据库后执行
-psql -U postgres -d your_database
+# 1) 以超级用户身份创建数据库与账号（首次部署执行）
+psql -U postgres -f scripts/000_init_db.sql
 
--- 启用扩展
+# 2) 连接到 agentlydb 后启用扩展并执行建表脚本
+psql -U postgres -d agentlydb
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
--- 执行建表脚本
 \i scripts/001_create_tables.sql
 ```
 
 ### 4. 配置
 
-编辑 `cmd/config/config.yaml`：
+编辑仓库根目录下的 `config.yaml`：
 
 ```yaml
 # 日志配置
 log:
-  file_path: "../../logs/agent.log"
-
-# Agents 目录配置（约定：agents/<id>/prompt.yaml）
-prompt:
-  dir: "../../internal/agents"
+  file_path: "./logs/agently"   # 日志文件路径前缀（相对于运行目录，实际文件名会自动追加日期）
 
 # HTTP 服务配置（grpc-gateway 对外暴露的 REST/SSE 网关）
 http:
@@ -168,12 +176,12 @@ http:
 
 # gRPC 服务配置（系统核心服务层，HTTP 网关在本机反向代理到此端口）
 grpc:
-  host: "0.0.0.0"   # 留空则与 http.host 一致
-  port: 8081        # 留空或 0 则默认取 http.port + 1
+  host: "127.0.0.1"  # 仅监听回环：外部流量统一经 HTTP 网关进入
+  port: 8081          # 留空或 0 则默认取 http.port + 1
 
 # 数据库配置（PostgreSQL）
 database:
-  dsn: "postgres://user:password@localhost:5432/agentlydb?sslmode=disable"
+  dsn: "postgres://agently:password@localhost:5432/agentlydb?sslmode=disable"
   max_open_conns: 20
   max_idle_conns: 5
   conn_max_lifetime: 300
@@ -206,25 +214,40 @@ tools:
   ip:
     access_key: "your-ipapi-access-key"
   translate:
-    base_url: "http://127.0.0.1:5000"
+    base_url: "https://libretranslate.com"
     api_key: ""
 
-# MCP工具配置
+# MCP 工具配置
+# id   ：稳定标识，被 Agent 的 prompt.yaml 中 tools.mcp_servers 引用，不要随意修改
+# name ：仅用于日志/前端展示，可随意修改，不影响绑定关系
 mcp:
   servers:
-    - name: "gold-analysis-server"
-      base_url: "http://127.0.0.1:8080/mcp"
+    - id: "gold_analysis"
+      name: "黄金分析 MCP 服务"
+      base_url: "http://127.0.0.1:9091"
       api_key: ""
-      timeout: 30
+      timeout: 60
+    - id: "news_analysis"
+      name: "新闻分析 MCP 服务"
+      base_url: "http://127.0.0.1:9092"
+      api_key: ""
+      timeout: 60
 ```
 
-> **注意**：Agent 列表不再需要在 `config.yaml` 中配置。系统启动时会自动扫描 `prompt.dir` 指定目录下的所有子目录，每个包含 `prompt.yaml` 的子目录即为一个 Agent。
+> **注意**：Agent 列表不需要在 `config.yaml` 中配置。所有 Agent 的 `prompt.yaml` 通过 `internal/agents/embed.go` 的 `embed.FS` 在编译期嵌入二进制，系统启动时会自动扫描并注册每个包含 `prompt.yaml` 的子目录（目录名即 Agent ID），无需外部文件路径配置。
 
 ### 5. 运行
 
+在仓库根目录直接运行（配置默认从 `./config.yaml` 加载）：
+
 ```bash
-cd cmd/server
 go run main.go
+```
+
+如需交叉编译为 Linux 可执行文件：
+
+```bash
+bash bd.sh agently-server   # 生成 agently-server（GOOS=linux GOARCH=amd64）
 ```
 
 ### 6. 启动与交互示例
@@ -452,7 +475,7 @@ sequenceDiagram
 ### 日志系统
 
 - AI 回答通过 **SSE 流式**返回给客户端（不再有 CLI 终端输出）
-- 运行日志（初始化、路由、工具调用、错误）→ **日志文件** (`logs/agent.log`)
+- 运行日志（初始化、路由、工具调用、错误）→ **日志文件**（按 `log.file_path` 前缀 + 日期，如 `logs/agently-2026-08-27.log`）
 - 日志级别：`INFO`、`ERROR`、`WARNING`
 - 基于 Go 标准库 `log` 实现，轻量无第三方依赖
 
@@ -511,11 +534,11 @@ sequenceDiagram
 
 ### 鉴权：从 HTTP 中间件到 gRPC 拦截器（契约即策略）
 
-- 旧：`internal/middleware/auth.go` 从 HTTP 头解析并校验 JWT。
+- 旧：`internal/middleware/auth.go` 从 HTTP 头解析并校验 JWT（已移除）。
 - 新：`internal/server/interceptor.go` 提供 **Unary + Stream 双拦截器**，从 gRPC metadata 的 `authorization` 读取 Bearer Token 并校验，成功后把 `user_id`/`username` 注入 `context`。
 - 网关通过 `runtime.WithMetadata` 把 HTTP `Authorization` 头透传为 gRPC metadata。
 - **鉴权策略写在 proto 契约里**：在 `agently.proto` 中定义自定义方法选项 `(agently.v1.public)`，对公开方法（注册/登录/发码）显式标注 `option (agently.v1.public) = true;`。拦截器启动时遍历 proto 描述符注册表构建「方法 → 是否公开」策略表。
-- 语义为 **default-secure**：只有显式声明 `public=true` 的方法免鉴权，其余（含未来新增方法）一律需要鉴权，从根本上杜绝“新增方法即意外公开”的隐患。
+- 语义为 **default-secure**：只有显式声明 `public=true` 的方法免鉴权，其余（含未来新增方法）一律需要鉴权，从根本上杜绝"新增方法即意外公开"的隐患。
 
 ```proto
 extend google.protobuf.MethodOptions {
@@ -532,7 +555,7 @@ rpc Login(LoginRequest) returns (AuthResponse) {
 
 - gRPC 侧 `Chat` 为**服务端流式** RPC，逐条下发 `ChatEvent`（`type` ∈ `route/message/tool_call/tool_result/tool_error/error/done`）。
 - 网关侧对 `/v1/sessions/{id}:chat` 注册**自定义 SSE 处理器**：内部以 gRPC 客户端调用 `Chat`，把每个 `ChatEvent` 转写为 `event: <type>\ndata: <json>\n\n`，与旧版 SSE 字节级一致。
-- **覆盖生成处理器的关键**：`runtime.ServeMux.Handle` 采用“前插”策略，匹配时从前往后取首个命中，故**后注册者优先**。因此自定义 SSE 处理器必须在 `RegisterSessionServiceHandler` **之后**注册，才能覆盖自动生成的流式 `Chat` 处理器。
+- **覆盖生成处理器的关键**：`runtime.ServeMux.Handle` 采用"前插"策略，匹配时从前往后取首个命中，故**后注册者优先**。因此自定义 SSE 处理器必须在 `RegisterSessionServiceHandler` **之后**注册，才能覆盖自动生成的流式 `Chat` 处理器。
 - 首个事件采用「预读」策略：若首个事件是鉴权/校验类错误（未登录、会话不存在、消息为空），以标准 `4xx` JSON 返回；否则切换到 SSE 流。
 
 ### JSON 兼容性细节
@@ -681,7 +704,7 @@ system_prompt: |
   你是一个专业的...
 ```
 
-2. **完成！** 系统启动时会自动发现并注册该 Agent。
+2. **完成！** 系统启动时会通过 `internal/agents/embed.go` 的 `embed.FS` 自动发现并注册该 Agent（新增目录后需重新编译，因为 `//go:embed */prompt.yaml` 在编译期完成嵌入）。
 
 > **约定说明**：
 > - 目录名即为 Agent ID（如 `my_agent`）
@@ -726,9 +749,9 @@ func (t *MyTool) Execute(ctx context.Context, args map[string]interface{}) (stri
 2. **完成！** 工具会在启动时通过 `init()` 自动注册到全局注册表，`SetupLocalToolGroup` 会按 Agent `prompt.yaml` 中声明的 `tools.local_groups` 自动发现并加载。
 
 > **工具注册机制说明**：
-> - `local/registry.go` 维护全局工具注册表，提供 `Register(group, factory)` 和 `GetToolsByGroup(group, cfg)` 两个核心函数
+> - `internal/tools/local/registry.go` 维护全局工具注册表，提供 `Register(group, factory)` 和 `GetToolsByGroup(group, cfg)` 两个核心函数
 > - 每个工具文件通过 `init()` 调用 `Register` 将自己的工厂函数注册到对应的工具组
-> - `setup.go` 中的 `SetupLocalToolGroup(aiAgent, cfg, group)` 调用 `GetToolsByGroup(group, cfg)` 自动获取所有工具并注册到 Agent
+> - `internal/tools/setup.go` 中的 `SetupLocalToolGroup(aiAgent, cfg, group)` 调用 `GetToolsByGroup(group, cfg)` 自动获取所有工具并注册到 Agent
 > - 工具信息通过 OpenAI function calling 的 `tools` 参数传递给 LLM，无需在 Prompt 中手动描述
 
 ### 接入MCP工具服务
@@ -744,7 +767,7 @@ mcp:
   servers:
     - id: "my_mcp"                      # 稳定标识，被 prompt.yaml 引用
       name: "我的 MCP 服务"               # 仅用于日志/UI 展示
-      base_url: "http://127.0.0.1:9090/mcp"
+      base_url: "http://127.0.0.1:9090"
       api_key: ""
       timeout: 60
 ```
@@ -788,14 +811,14 @@ llm:
 
 ## ⚠️ 注意事项
 
-1. **API 密钥安全**：`config.yaml` 中包含敏感信息，请勿提交到公开仓库（已在 `.gitignore` 中排除）
+1. **API 密钥安全**：`config.yaml` 中包含敏感信息，请勿提交到公开仓库（已在 `.gitignore` 中排除本地覆盖配置 `config_local.yaml`）
 2. **JWT 密钥**：生产环境必须在 `config.yaml` 的 `jwt.secret` 中设置强随机值，切勿使用默认值
 3. **SMTP 必配**：邮箱验证服务为必配项，未配置 SMTP 时项目无法启动。推荐使用 QQ 邮箱（smtp.qq.com:587）或网易邮箱（smtp.163.com:465），需开启 SMTP 服务并获取授权码
 4. **数据库依赖**：数据库不可用时项目无法启动，所有业务接口（注册/登录/会话/Agent管理）依赖数据库
 5. **网络依赖**：天气、翻译、短链接等工具需要网络访问对应的 API 服务
-6. **翻译服务**：默认使用本地 LibreTranslate 实例（`http://127.0.0.1:5000`），需自行部署或替换为公共实例
-7. **MCP服务**：黄金分析助手依赖 MCP 工具服务端，如服务未启动，Agent 仍可创建但无可用工具
-8. **日志路径**：默认日志输出到 `logs/agent.log`，路径相对于运行目录
+6. **翻译服务**：默认使用 LibreTranslate 公共实例（`https://libretranslate.com`），也可自行部署私有实例并替换 `base_url`
+7. **MCP服务**：黄金分析助手、新闻分析助手依赖各自的 MCP 工具服务端，如服务未启动或探活失败，启动会 fail-fast 报错
+8. **日志路径**：默认日志输出到 `logs/agently-<date>.log`（`log.file_path` 为前缀），路径相对于运行目录（即执行 `go run main.go` 时的当前目录，通常是仓库根目录）
 9. **Agent独立性**：每个Agent拥有独立的对话历史和工具集，切换Agent不会丢失之前的对话
 10. **路由Agent**：`intention_router` 是系统Agent，不对外展示，不可手动切换到该Agent
 11. **消息字段**：持久化消息中工具调用列表字段名为 `tool_call_list`（JSON 序列化后的字符串）
@@ -805,3 +828,4 @@ llm:
 ## 📄 许可证
 
 MIT License
+</content>

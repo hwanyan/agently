@@ -8,7 +8,7 @@
 --   如果是独立部署（没跑过 gold_analysis 的初始化），请先取消下面 CREATE USER 一行的注释。
 
 -- 创建数据库用户（如已存在请保持注释）
--- CREATE USER hwan WITH PASSWORD 'hwan@postgresql@2026';
+-- CREATE USER hwan WITH PASSWORD '******';
 
 -- 创建数据库
 CREATE DATABASE agentlydb OWNER agently;

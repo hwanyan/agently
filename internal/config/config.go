@@ -31,8 +31,10 @@ type PromptConfig struct {
 // 返回：
 //   - *types.Config: 加载的配置
 //   - error: 可能的错误
-func LoadConfiguration() (*types.Config, error) {
-	configPath := "../config/config.yaml"
+func LoadConfiguration(configPath string) (*types.Config, error) {
+	if configPath == "" {
+		configPath = "./config.yaml"
+	}
 	cfg, err := loadConfigFromFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("加载配置文件失败: %w", err)

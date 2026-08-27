@@ -46,7 +46,7 @@ func initAgent(cfg *types.Config) *agent.Manager {
 
 // initConfig 加载配置
 func initConfig() *types.Config {
-	cfg, err := config.LoadConfiguration()
+	cfg, err := config.LoadConfiguration("./config.yaml")
 	if err != nil {
 		logger.Error("加载配置失败: %v", err)
 		log.Fatalf("加载配置失败: %v", err)
