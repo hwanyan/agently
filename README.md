@@ -13,6 +13,7 @@
 - 🔧 **自动工具调用** — Agent 自动识别意图并调用外部工具完成任务
 - 🌊 **流式响应** — 支持流式输出，实时展示 AI 回答，流式模式下同样支持工具调用
 - 🔌 **MCP协议支持** — 通过 Model Context Protocol 动态发现和调用远程工具服务
+- 🤝 **A2A协议支持** — 将业务 Agent 通过 Agent2Agent（A2A）协议暴露为可互操作端点，供其他 AI Agent 发现与调用
 - 📝 **日志系统** — 统一的日志管理（INFO/ERROR/WARNING → 文件）
 - ⚙️ **YAML 配置** — 统一使用仓库根目录下的 `config.yaml` 管理所有配置项
 - 🔒 **并发安全** — 使用互斥锁 + channel 机制保护对话历史的并发访问
@@ -90,6 +91,10 @@ agently/
 │   │   ├── auth_service.go                 # AuthService gRPC 实现（注册/登录/发码）
 │   │   ├── agent_service.go                # AgentService gRPC 实现（列表/工具/切换）
 │   │   └── session_service.go              # SessionService gRPC 实现（会话 CRUD + Chat 流式）
+│   ├── a2a/                                # A2A（Agent-to-Agent）协议服务
+│   │   ├── executor.go                     # 将 A2A 请求桥接到业务 Agent（流式 + Artifact 事件透出）
+│   │   ├── agentcard.go                    # 根据 Agent 元信息生成 A2A AgentCard（自描述清单）
+│   │   └── server.go                       # A2A HTTP 服务编排（JSON-RPC + AgentCard 端点挂载）
 │   ├── llm/                                # LLM 客户端
 │   │   ├── factory.go                      # 根据配置构造 LLM 客户端（NewClientFromConfig）
 │   │   ├── openai.go                       # OpenAI 协议客户端实现
@@ -178,6 +183,13 @@ http:
 grpc:
   host: "127.0.0.1"  # 仅监听回环：外部流量统一经 HTTP 网关进入
   port: 8081          # 留空或 0 则默认取 http.port + 1
+
+# A2A（Agent-to-Agent）协议服务配置
+# 将每个业务 Agent 暴露为符合 a2a-protocol.org 协议的独立端点，供其他 AI Agent 互操作调用
+a2a:
+  host: "0.0.0.0"     # A2A 服务监听地址
+  port: 9090          # A2A 服务端口（0 表示不启动 A2A 服务）
+  public_url: ""      # 对外可达基础 URL（用于 AgentCard 的 url 字段），给第三方使用必须配置；留空则按 host:port 本机推导（仅限本地/内网直连测试）
 
 # 数据库配置（PostgreSQL）
 database:
@@ -606,6 +618,51 @@ resp, err := client.ListAgents(ctx, &agentlypb.ListAgentsRequest{})
 
 ---
 
+## 🤝 A2A 协议接入说明
+
+A2A（Agent2Agent，a2a-protocol.org）是 Google 牵头的开放协议，用于不同 AI Agent 之间的互操作。本项目已将 `internal/agents/` 下定义的每个**业务 Agent**（如 `news_analysis`、`gold_analysis`、`general`）通过官方 Go SDK（`github.com/a2aproject/a2a-go/v2`）暴露为符合 A2A 协议的独立端点，任何遵循 A2A 协议的 Agent 或客户端都能发现并调用它们。
+
+### 端点约定
+
+A2A 服务监听独立端口（`a2a.port`，默认 `9090`），每个业务 Agent 暴露两个端点（以 `news_analysis` 为例）：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/a2a/news_analysis` | 该 Agent 的 A2A **JSON-RPC** 端点（`message/send`、`message/stream`、`tasks/get` 等） |
+| GET | `/a2a/news_analysis/.well-known/agent-card.json` | 该 Agent 的 **AgentCard**（自描述清单，供发现与能力协商） |
+
+AgentCard 中 `supportedInterfaces[].url` 指向对应 JSON-RPC 端点，其他 Agent 发现卡片后即可直接调用。
+
+### 配置
+
+```yaml
+a2a:
+  host: "0.0.0.0"       # A2A 服务监听地址
+  port: 9090            # A2A 服务端口（0 表示不启动 A2A 服务）
+  public_url: ""        # 对外可达基础 URL；给第三方使用必须配置（如 nginx/ingress 反代后的域名或服务器对外 IP），留空则本机推导（仅限本地/内网直连测试）
+```
+
+### 快速体验
+
+```bash
+# 1) 查看 news_analysis 的 AgentCard
+curl http://localhost:9090/a2a/news_analysis/.well-known/agent-card.json
+
+# 2) 使用官方 A2A CLI 发现并调用（安装：go install github.com/a2aproject/a2a-go/v2/cmd/a2a@latest）
+a2a discover http://localhost:9090/a2a/news_analysis
+a2a send    http://localhost:9090/a2a/news_analysis "帮我分析今天的科技新闻"
+```
+
+也可以用任意 A2A SDK/客户端（如 `a2aclient.NewFromCard` 从 AgentCard 创建客户端后 `SendMessage`）进行调用。
+
+### 实现说明与限制
+
+- 桥接层见 `internal/a2a/`：`executor.go` 将 A2A 消息转成文本、调用对应业务 Agent 的 `ProcessMessageStream`，并流式产出 `Working` 状态事件 + 增量 `Artifact` 事件，最终以完整回复 `Message` 结束任务（支持 `message/stream` 流式）。
+- **会话隔离**：业务 Agent 的对话历史（`BasicAgent.history`）为实例级共享，与现有 gRPC 对话层行为一致；A2A 层的多会话/多客户端并发会共享同一份历史并受 `streamDone` 串行化。如需按 A2A `contextId` 严格隔离多会话，需后续为每个上下文维护独立的 Agent 实例或历史。
+- **鉴权**：A2A 端点默认不启用 JWT 鉴权，适用于内网/受信环境。如需对外公开，请在 `server.go` 的 A2A 路由上叠加鉴权中间件（如 API Key / mTLS）。
+
+---
+
 ## 📧 个人开发者验证码/短信验证方案
 
 对于个人开发者来说，实现注册时的用户身份验证，有以下几种主流方案：
@@ -803,6 +860,7 @@ llm:
 | `google.golang.org/grpc` | gRPC 服务端/客户端运行时 |
 | `google.golang.org/protobuf` | Protobuf 运行时与 JSON 编解码（protojson） |
 | `github.com/grpc-ecosystem/grpc-gateway/v2` | grpc-gateway：REST/SSE ↔ gRPC 反向代理 |
+| `github.com/a2aproject/a2a-go/v2` | A2A（Agent2Agent）协议 Go SDK：暴露业务 Agent 为可互操作端点 |
 | `github.com/skip2/go-qrcode` | 二维码生成 |
 | `github.com/golang-jwt/jwt/v5` | JWT 签发与验证 |
 | `github.com/lib/pq` | PostgreSQL 驱动 |

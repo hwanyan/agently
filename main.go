@@ -4,6 +4,7 @@ package main
 import (
 	"log"
 
+	"github.com/hwanyan/agently/internal/a2a"
 	"github.com/hwanyan/agently/internal/agent"
 	"github.com/hwanyan/agently/internal/agents"
 	"github.com/hwanyan/agently/internal/auth"
@@ -31,6 +32,9 @@ func main() {
 
 	// 初始化认证服务、会话存储与消息存储
 	authSvc, sessionStore, messageStore := initServices(cm.Get, db)
+
+	// 启动 A2A（Agent-to-Agent）服务，把业务 Agent 通过 A2A 协议对外暴露
+	startA2AServer(cm.Get, agentManager)
 
 	// 启动 gRPC 服务与 HTTP 网关
 	startServer(cm.Get, agentManager, authSvc, sessionStore, messageStore)
@@ -117,6 +121,21 @@ func initServices(provider types.ConfigProvider, db *store.DB) (authSvc *auth.Se
 	logger.Info("数据库连接成功，认证服务已初始化")
 
 	return authSvc, sessionStore, messageStore
+}
+
+// startA2AServer 启动 A2A（Agent-to-Agent）服务，将全部业务 Agent 通过 A2A 协议对外暴露。
+//
+// 仅依赖 agentManager，不依赖鉴权/会话等模块，故在 gRPC 服务与 HTTP 网关启动之前、
+// 以 goroutine 方式启动（A2A 服务自身阻塞监听，由 startServer 继续接管后续启动流程）。
+// 若未配置 a2a.port（为 0），则跳过 A2A 服务启动。
+func startA2AServer(provider types.ConfigProvider, manager *agent.Manager) {
+	cfg := provider()
+	if cfg.A2A.Port == 0 {
+		logger.Info("未配置 A2A 服务端口（a2a.port），跳过 A2A 服务启动")
+		return
+	}
+	srv := a2a.NewServer(manager, &cfg.A2A)
+	go srv.Start()
 }
 
 // startServer 启动 gRPC 服务与 grpc-gateway HTTP 网关

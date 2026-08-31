@@ -199,6 +199,16 @@ type GRPCConfig struct {
 	Host string `yaml:"host"` // 仅监听回环
 }
 
+// A2AConfig A2A（Agent-to-Agent）协议服务配置
+//
+// A2A 服务将每个业务 Agent 暴露为符合 Agent2Agent 协议（a2a-protocol.org）的独立端点，
+// 供其他 AI Agent 或客户端通过 JSON-RPC 互操作调用。
+type A2AConfig struct {
+	Host      string `yaml:"host"`       // A2A 服务监听地址，默认 0.0.0.0
+	Port      int    `yaml:"port"`       // A2A 服务端口（0 表示不启动 A2A 服务）
+	PublicURL string `yaml:"public_url"` // 对外可达的基础 URL（用于 AgentCard 的 url 字段），留空则按 host:port 推导
+}
+
 // LogConfig 日志配置
 //
 // 注意：FilePath 不通过配置文件设置（无 yaml tag），而是由 config.Manager 在加载配置时，
@@ -212,6 +222,7 @@ type Config struct {
 	Log      LogConfig      `yaml:"log"`      // 日志配置
 	HTTP     HTTPConfig     `yaml:"http"`     // HTTP服务配置（grpc-gateway 网关）
 	GRPC     GRPCConfig     `yaml:"grpc"`     // gRPC服务配置
+	A2A      A2AConfig      `yaml:"a2a"`      // A2A（Agent-to-Agent）协议服务配置
 	Database DatabaseConfig `yaml:"database"` // 数据库配置
 	JWT      JWTConfig      `yaml:"jwt"`      // JWT 配置
 	SMTP     SMTPConfig     `yaml:"smtp"`     // SMTP 邮件配置

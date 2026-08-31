@@ -6,12 +6,19 @@
 # HTTP 服务配置（grpc-gateway 对外暴露的 REST/SSE 网关）
 http:
   port: 8090          # 网关端口号
-  host: "0.0.0.0"     # 服务监听的主机地址（所有主机）
+  host: "0.0.0.0"     # 服务监听的主机地址（默认监听所有主机）
 
 # gRPC 服务配置（系统内部核心服务层，仅供本机 HTTP 网关回环反向代理，不对外暴露）
 grpc:
   port: 50050         # gRPC 端口号（留空或 0 则默认取 http.port + 1）
   host: "127.0.0.1"   # 仅监听回环：外部流量统一经 HTTP 网关进入；无需对外提供原生 gRPC
+
+# A2A（Agent-to-Agent）协议服务配置
+# 将每个业务 Agent 暴露为符合 a2a-protocol.org 协议的独立端点，供其他 AI Agent 互操作调用。
+a2a:
+  host: "0.0.0.0"       # A2A 服务监听地址（默认监听所有主机）
+  port: 9090            # A2A 服务端口（0 表示不启动 A2A 服务）
+  public_url: ""        # 对外可达基础 URL（用于 AgentCard 的 url 字段），给第三方使用必须配置；留空则按 localhost:port 本机推导（仅限本地/内网直连测试）
 
 # 数据库配置（PostgreSQL）
 database:
