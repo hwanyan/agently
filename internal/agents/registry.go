@@ -162,37 +162,6 @@ func InitAgents(provider types.ConfigProvider) (*agent.Manager, error) {
 	return m, nil
 }
 
-// attachTools 按 AgentInfo.Tools 声明，给 Agent 注入本地工具组与 MCP 工具
-//
-// 注意：
-//   - 本地工具组通过 internal/tools 包中的注册分发函数完成，传递 provider 而非固定配置，
-//     使本地工具在 Execute 时能读取到 config.yaml 热更新后的最新值
-//   - MCP 工具直接复用 discoverAllReferencedMCPTools 的探活结果，避免重复发现
-func attachTools(
-	aiAgent *agent.BasicAgent,
-	info agent.AgentInfo,
-	provider types.ConfigProvider,
-	mcpToolsByServerID map[string][]types.Tool,
-) {
-	// 1. 本地工具组
-	for _, group := range info.Tools.LocalGroups {
-		tools.SetupLocalToolGroup(aiAgent, provider, group)
-	}
-	// 2. MCP 工具（按 ID 引用）
-	for _, serverID := range info.Tools.MCPServers {
-		toolsList, ok := mcpToolsByServerID[serverID]
-		if !ok {
-			// 理论上不会进入：前面已经做过引用-存在性校验与探活
-			logger.Error("[%s] 引用的 MCP 服务 ID [%s] 未在探活结果中，跳过工具注入", info.ID, serverID)
-			continue
-		}
-		for _, t := range toolsList {
-			aiAgent.AddTool(t)
-			logger.Info("Agent [%s] 注入 MCP 工具 [%s]（来自服务 ID=%s）", info.ID, t.Name(), serverID)
-		}
-	}
-}
-
 // validateMCPServersConfig 校验配置的 MCP.Servers 自身：ID 必须唯一且非空
 func validateMCPServersConfig(provider types.ConfigProvider) error {
 	cfg := provider()
@@ -201,7 +170,7 @@ func validateMCPServersConfig(provider types.ConfigProvider) error {
 		if strings.TrimSpace(s.ID) == "" {
 			return fmt.Errorf("配置错误：mcp.servers[%d] 缺少必填字段 id（base_url=%s）", i, s.BaseURL)
 		}
-		if _, dup := seen[s.ID]; dup {
+		if _, exits := seen[s.ID]; exits {
 			return fmt.Errorf("配置错误：mcp.servers 中存在重复的 id [%s]", s.ID)
 		}
 		seen[s.ID] = struct{}{}
@@ -219,7 +188,8 @@ func validateAgentToolsRef(prompts map[string]agent.AgentInfo, provider types.Co
 	for agentID, info := range prompts {
 		for _, ref := range info.Tools.MCPServers {
 			if _, ok := available[ref]; !ok {
-				return fmt.Errorf("Agent [%s] 引用的 MCP 服务 id=[%s] 在配置 mcp.servers 中不存在，请检查 prompt.yaml 与 config.yaml 是否一致", agentID, ref)
+				return fmt.Errorf("Agent [%s] 引用的 MCP 服务 id=[%s] 在配置 mcp.servers 中不存在，"+
+					"请检查 prompt.yaml 与 config.yaml 是否一致", agentID, ref)
 			}
 		}
 	}
@@ -235,7 +205,7 @@ func discoverAllReferencedMCPTools(
 	provider types.ConfigProvider,
 ) (map[string][]types.Tool, error) {
 	cfg := provider()
-	// 收集所有被引用过的 server id
+	// 在项目中使用的 agente 中收集所有被引用过的 server id
 	referenced := map[string]struct{}{}
 	for _, info := range prompts {
 		for _, id := range info.Tools.MCPServers {
@@ -243,12 +213,13 @@ func discoverAllReferencedMCPTools(
 		}
 	}
 
-	// 通过 ID 反查 server 配置
+	// 在配置文件中构建全部的基于 ID 获取 server 配置的映射关系
 	cfgByID := map[string]types.MCPServerConfig{}
 	for _, s := range cfg.MCP.Servers {
 		cfgByID[s.ID] = s
 	}
 
+	// 探活
 	result := map[string][]types.Tool{}
 	for serverID := range referenced {
 		serverCfg := cfgByID[serverID]
@@ -290,4 +261,35 @@ func replaceTemplateVars(template string, vars map[string]string) string {
 		result = strings.ReplaceAll(result, placeholder, value)
 	}
 	return result
+}
+
+// attachTools 按 AgentInfo.Tools 声明，给 Agent 注入本地工具组与 MCP 工具
+//
+// 注意：
+//   - 本地工具组通过 internal/tools 包中的注册分发函数完成，传递 provider 而非固定配置，
+//     使本地工具在 Execute 时能读取到 config.yaml 热更新后的最新值
+//   - MCP 工具直接复用 discoverAllReferencedMCPTools 的探活结果，避免重复发现
+func attachTools(
+	aiAgent *agent.BasicAgent,
+	info agent.AgentInfo,
+	provider types.ConfigProvider,
+	mcpToolsByServerID map[string][]types.Tool,
+) {
+	// 1. 本地工具组
+	for _, group := range info.Tools.LocalGroups {
+		tools.SetupLocalToolGroup(aiAgent, provider, group)
+	}
+	// 2. MCP 工具（按 ID 引用）
+	for _, serverID := range info.Tools.MCPServers {
+		toolsList, ok := mcpToolsByServerID[serverID]
+		if !ok {
+			// 理论上不会进入：前面已经做过引用-存在性校验与探活
+			logger.Error("[%s] 引用的 MCP 服务 ID [%s] 未在探活结果中，跳过工具注入", info.ID, serverID)
+			continue
+		}
+		for _, t := range toolsList {
+			aiAgent.AddTool(t)
+			logger.Info("Agent [%s] 注入 MCP 工具 [%s]（来自服务 ID=%s）", info.ID, t.Name(), serverID)
+		}
+	}
 }

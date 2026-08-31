@@ -43,12 +43,11 @@ func (t *MCPTool) Parameters() map[string]interface{} {
 	return t.definition.InputSchema
 }
 
-// Execute 执行MCP工具
-// 通过MCP客户端调用远程工具服务
+// Execute 执行MCP工具(通过MCP客户端调用远程工具服务)
 func (t *MCPTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	logger.Info("通过MCP协议调用远程工具 [%s] @ [%s]", t.definition.Name, t.client.GetServerName())
 
-	result, err := t.client.CallTool(ctx, t.definition.Name, args)
+	result, err := t.client.callTool(ctx, t.definition.Name, args)
 	if err != nil {
 		return "", fmt.Errorf("MCP工具 [%s] 执行失败: %w", t.definition.Name, err)
 	}
@@ -57,16 +56,9 @@ func (t *MCPTool) Execute(ctx context.Context, args map[string]interface{}) (str
 }
 
 // DiscoverAndCreateTools 从MCP服务器发现工具并创建适配器
-// 参数：
-//   - ctx: 上下文
-//   - client: MCP客户端
-//
-// 返回：
-//   - []*MCPTool: MCP工具适配器列表
-//   - error: 可能的错误
 func DiscoverAndCreateTools(ctx context.Context, client *Client) ([]*MCPTool, error) {
 	// 从MCP服务器获取工具列表
-	definitions, err := client.ListTools(ctx)
+	definitions, err := client.listTools(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("发现MCP工具失败: %w", err)
 	}

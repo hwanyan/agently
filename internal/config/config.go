@@ -23,8 +23,8 @@ type PromptConfig struct {
 	} `yaml:"settings"`
 }
 
-// loadConfigFromFile 从YAML文件加载配置
-func loadConfigFromFile(configPath string) (*types.Config, error) {
+// loadConfig 从YAML文件加载配置
+func loadConfig(configPath string) (*types.Config, error) {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {

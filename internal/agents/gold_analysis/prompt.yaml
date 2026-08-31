@@ -1,4 +1,5 @@
 # 黄金分析助手 Prompt
+secene: "gold_analysis"
 name: "黄金分析助手"
 description: "提供专业的黄金市场分析、行情查询和投资参考服务"
 role: "business"

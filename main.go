@@ -33,18 +33,6 @@ func main() {
 	startServer(cm.Get, agentManager, authSvc, sessionStore, messageStore)
 }
 
-// initAgents 加载 agent
-// 注意：InitAgents 内部会做"配置-Agent 引用"严格校验与 MCP 服务探活，任意一项失败即 fail-fast，
-// 避免出现"启动看似成功，运行时才发现工具为空"的隐性故障
-func initAgent(provider types.ConfigProvider) *agent.Manager {
-	agentManager, err := agents.InitAgents(provider)
-	if err != nil {
-		logger.Error("Agent 初始化失败: %v", err)
-		log.Fatalf("Agent 初始化失败: %v", err)
-	}
-	return agentManager
-}
-
 // initConfigManager 创建配置管理器并启动热更新监听（watch 模式）
 //
 // 首次加载失败即 fail-fast；watch 启动失败也视为 fail-fast，避免"看似支持热更新、实际未生效"的隐性故障。
@@ -62,6 +50,18 @@ func initConfigManager() *config.Manager {
 		log.Fatalf("启动配置热更新监听失败: %v", err)
 	}
 	return cm
+}
+
+// initAgents 加载 agent
+// 注意：InitAgents 内部会做"配置-Agent 引用"严格校验与 MCP 服务探活，任意一项失败即 fail-fast，
+// 避免出现"启动看似成功，运行时才发现工具为空"的隐性故障
+func initAgent(provider types.ConfigProvider) *agent.Manager {
+	agentManager, err := agents.InitAgents(provider)
+	if err != nil {
+		logger.Error("Agent 初始化失败: %v", err)
+		log.Fatalf("Agent 初始化失败: %v", err)
+	}
+	return agentManager
 }
 
 // initLogger 初始化日志系统

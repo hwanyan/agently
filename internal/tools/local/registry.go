@@ -21,9 +21,6 @@ type toolEntry struct {
 var globalRegistry []toolEntry
 
 // Register 注册工具工厂到全局注册表
-// 参数：
-//   - group: 工具组标识（如 "general"）
-//   - factory: 工具工厂函数
 func Register(group string, factory ToolFactory) {
 	globalRegistry = append(globalRegistry, toolEntry{
 		group:   group,

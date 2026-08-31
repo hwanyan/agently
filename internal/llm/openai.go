@@ -23,11 +23,6 @@ type OpenAIClient struct {
 }
 
 // NewOpenAIClient 创建一个新的OpenAI客户端
-// 参数：
-//   - provider: 配置提供者，用于在每次调用时读取最新的 LLM 配置（API Key/Model/BaseURL），支持热更新
-//
-// 返回：
-//   - *OpenAIClient: OpenAI客户端实例
 func NewOpenAIClient(provider types.ConfigProvider) *OpenAIClient {
 	return &OpenAIClient{
 		provider: provider,

@@ -26,11 +26,6 @@ type Client struct {
 }
 
 // NewClient 创建MCP客户端
-// 参数：
-//   - config: MCP服务器配置
-//
-// 返回：
-//   - *Client: MCP客户端实例
 func NewClient(config types.MCPServerConfig) *Client {
 	timeout := time.Duration(config.Timeout) * time.Second
 	if timeout == 0 {
@@ -78,11 +73,8 @@ type ListToolsResponse struct {
 	Tools []ToolDefinition `json:"tools"` // 工具定义列表
 }
 
-// ListTools 从MCP服务器获取可用工具列表
-// 返回：
-//   - []ToolDefinition: 工具定义列表
-//   - error: 可能的错误
-func (c *Client) ListTools(ctx context.Context) ([]ToolDefinition, error) {
+// listTools 从MCP服务器获取可用工具列表
+func (c *Client) listTools(ctx context.Context) ([]ToolDefinition, error) {
 	logger.Info("从MCP服务器 [%s] 获取工具列表...", c.serverName)
 
 	reqBody := map[string]interface{}{
@@ -108,16 +100,8 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolDefinition, error) {
 	return result.Result.Tools, nil
 }
 
-// CallTool 调用MCP工具
-// 参数：
-//   - ctx: 上下文
-//   - toolName: 工具名称
-//   - arguments: 调用参数
-//
-// 返回：
-//   - string: 工具执行结果
-//   - error: 可能的错误
-func (c *Client) CallTool(ctx context.Context, toolName string, arguments map[string]interface{}) (string, error) {
+// callTool 调用MCP工具
+func (c *Client) callTool(ctx context.Context, toolName string, arguments map[string]interface{}) (string, error) {
 	logger.Info("调用MCP工具 [%s] @ [%s], 参数: %v", toolName, c.serverName, arguments)
 
 	reqBody := map[string]interface{}{

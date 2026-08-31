@@ -9,12 +9,11 @@ import (
 
 // SetupLocalToolGroup 按工具组名称为 Agent 注入本地工具
 //
-// 设计说明（方案 B）：
-//   - MCP 工具的发现与注入已统一收敛到 internal/agents 包的 InitAgents 中（按 server id 引用）
-//   - 本函数只负责本地工具组的注入，命名也由原 SetupGeneralTools 改为更通用的 SetupLocalToolGroup
-//   - 未知工具组会打 Error 但不阻断启动（业务可降级），如需 fail-fast 可在此改为返回 error
-//   - provider 支持配置热更新：工具内部持有 provider 而非固定配置值，每次 Execute 时
-//     读取到的都是 config.yaml 变更后最新生效的 API Key / BaseURL 等配置
+//	MCP 工具的发现与注入已统一收敛到 internal/agents 包的 InitAgents 中（按 server id 引用）
+//	本函数只负责本地工具组的注入，命名也由原 SetupGeneralTools 改为更通用的 SetupLocalToolGroup
+//	未知工具组会打 Error 但不阻断启动（业务可降级），如需 fail-fast 可在此改为返回 error
+//	provider 支持配置热更新：工具内部持有 provider 而非固定配置值，每次 Execute 时
+//	读取到的都是 config.yaml 变更后最新生效的 API Key / BaseURL 等配置
 func SetupLocalToolGroup(aiAgent *agent.BasicAgent, provider types.ConfigProvider, group string) {
 	if group == "" {
 		return

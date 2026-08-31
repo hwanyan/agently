@@ -50,10 +50,13 @@ func NewManager(path string) (*Manager, error) {
 		return nil, fmt.Errorf("解析配置文件路径失败: %w", err)
 	}
 
-	cfg, err := loadConfigFromFile(absPath)
+	cfg, err := loadConfig(absPath)
 	if err != nil {
 		return nil, fmt.Errorf("加载配置文件失败: %w", err)
 	}
+
+	// TODO 基于 path（配置文件绝对路径），在 bin 目录的同级目录下生成 logs 目录
+	cfg.Log.FilePath = ""
 
 	m := &Manager{
 		path:       absPath,
@@ -117,6 +120,8 @@ func (m *Manager) watchLoop() {
 			if debounceTimer != nil {
 				debounceTimer.Stop()
 			}
+			// 启动一个计时器，在等待 m.debounceMs 时间后，在新的 goroutine 中异步调用 m.reloadSafely，
+			// 执行配置重载逻辑。如果在这个等待时间内再次收到新的事件，之前的定时器会被重置
 			debounceTimer = time.AfterFunc(m.debounceMs, m.reloadSafely)
 		case err, ok := <-m.watcher.Errors:
 			if !ok {
@@ -138,7 +143,7 @@ func (m *Manager) reloadSafely() {
 
 // reload 重新加载配置文件并校验，成功后原子替换内存中的配置
 func (m *Manager) reload() error {
-	newCfg, err := loadConfigFromFile(m.path)
+	newCfg, err := loadConfig(m.path)
 	if err != nil {
 		return err
 	}
