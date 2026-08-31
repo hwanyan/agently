@@ -234,7 +234,7 @@ mcp:
       timeout: 60
 ```
 
-> **注意**：Agent 列表不需要在 `config.yaml` 中配置。所有 Agent 的 `prompt.yaml` 通过 `internal/agents/embed.go` 的 `embed.FS` 在编译期嵌入二进制，系统启动时会自动扫描并注册每个包含 `prompt.yaml` 的子目录（目录名即 Agent ID），无需外部文件路径配置。
+> **注意**：Agent 列表不需要在 `config.yaml` 中配置。所有 Agent 的 `prompt.yaml` 通过 `internal/agents/embed.go` 的 `embed.FS` 在编译期嵌入二进制，系统启动时会自动扫描每个包含 `prompt.yaml` 的子目录并注册 Agent；Agent 的唯一标识由 `prompt.yaml` 内的 `agent_id` 字段显式声明（与所在目录名无关），无需外部文件路径配置。
 
 ### 5. 运行
 
@@ -680,7 +680,7 @@ smtp:
 
 采用 **约定优于配置** 模式，新增 Agent 只需 **1 步**：
 
-1. 在 `internal/agents/` 下创建以 Agent ID 命名的目录，并在其中创建 `prompt.yaml`：
+1. 在 `internal/agents/` 下创建任意名称的目录（建议与 Agent 语义相关，便于代码维护，但不作为标识使用），并在其中创建 `prompt.yaml`：
 
 ```bash
 mkdir internal/agents/my_agent
@@ -688,6 +688,7 @@ mkdir internal/agents/my_agent
 
 ```yaml
 # internal/agents/my_agent/prompt.yaml
+agent_id: "my_agent"    # Agent 唯一标识，全局必须唯一，注册与路由均以此字段为准
 name: "我的Agent"
 description: "Agent功能描述"
 role: "business"        # 角色：system（系统级）/ business（业务级）
@@ -707,11 +708,11 @@ system_prompt: |
 2. **完成！** 系统启动时会通过 `internal/agents/embed.go` 的 `embed.FS` 自动发现并注册该 Agent（新增目录后需重新编译，因为 `//go:embed */prompt.yaml` 在编译期完成嵌入）。
 
 > **约定说明**：
-> - 目录名即为 Agent ID（如 `my_agent`）
-> - `prompt.yaml` 中必须包含 `name`、`description`、`role`、`tools`、`system_prompt` 五个字段
+> - Agent 唯一标识由 `prompt.yaml` 中的 `agent_id` 字段显式声明，与所在目录名**无强制关联**（目录名可自由重命名/重构代码组织，不影响对外的 Agent ID），全局要求唯一，重复声明会在启动期直接 fail-fast
+> - `prompt.yaml` 中必须包含 `agent_id`、`name`、`description`、`role`、`tools`、`system_prompt` 六个字段
 > - `tools.local_groups` 与 `tools.mcp_servers` 可同时声明，一个 Agent 可混合使用本地工具组与多个 MCP 服务
 > - 工具信息无需写入 Prompt，系统通过 OpenAI function calling 机制自动将已注册工具传递给 LLM
-> - 路由 Agent（`intention_router`）的 Prompt 中可使用 `{{AGENTS_SECTION}}` 模板变量，系统会自动替换为所有业务 Agent 的列表描述
+> - 路由 Agent（`role: system`，内置目录名 `intention_router`，其 `agent_id` 为 `intent_router`）的 Prompt 中可使用 `{{AGENTS_SECTION}}` 模板变量，系统会自动替换为所有业务 Agent 的列表描述
 > - 无需修改任何 Go 代码；如声明了 `mcp_servers`，需在 `config.yaml` 的 `mcp.servers` 中确保对应 `id` 已配置（启动期会做严格的引用-存在性校验与 MCP 服务探活，任一失败即 fail-fast）
 
 ### 添加新的本地工具（插件化）

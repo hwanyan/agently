@@ -1,5 +1,5 @@
 # 黄金分析助手 Prompt
-secene: "gold_analysis"
+agent_id: "gold_analysis"      # Agent 唯一标识，注册时以此字段为准（与所在目录名无强制关联）
 name: "黄金分析助手"
 description: "提供专业的黄金市场分析、行情查询和投资参考服务"
 role: "business"

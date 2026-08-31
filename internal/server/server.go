@@ -1,10 +1,19 @@
+// Package server 负责 gRPC 服务与 grpc-gateway HTTP 网关的启动编排。
+//
+// 分层说明：
+//   - internal/server            （本包）  仅承担"进程如何启动"这一件事：
+//     监听地址计算、gRPC Server/HTTP Gateway 的创建与注册、SSE 网关处理器等
+//     "为 main.go 的编排提供抽象"的引导层（bootstrap）逻辑。
+//   - internal/server/rpc         承载具体 RPC 方法的业务实现（AuthServer / AgentServer / SessionServer）。
+//   - internal/server/middleware  承载鉴权拦截器与请求上下文注入等横切关注点。
+//
+// 三者职责正交、依赖方向单一（server 依赖 rpc 与 middleware，反之不成立），
+// 新增一个 RPC 服务或一个中间件时，只需在对应子包内扩展，无需触碰本文件。
 package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +22,8 @@ import (
 	"github.com/hwanyan/agently/internal/agent"
 	"github.com/hwanyan/agently/internal/auth"
 	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/internal/server/middleware"
+	"github.com/hwanyan/agently/internal/server/rpc"
 	"github.com/hwanyan/agently/internal/store"
 	agentlypb "github.com/hwanyan/agently/pb/gen"
 	"github.com/hwanyan/agently/pkg/types"
@@ -21,17 +32,17 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Server 负责编排 gRPC 服务与 grpc-gateway HTTP 网关。
 //
 // 架构：
-//   - 核心业务以 gRPC 服务对外提供（AuthService / AgentService / SessionService）；
+//   - 核心业务以 gRPC 服务对外提供（AuthService / AgentService / SessionService），
+//     具体实现见 internal/server/rpc；
 //   - grpc-gateway 在本机反向代理到 gRPC 端口，对外暴露与旧版完全一致的 REST 路径；
 //   - 对话接口 /sessions/{id}/chat 走 gRPC 服务端流式，网关侧以自定义 SSE 处理器
-//     把 gRPC 流事件转写为与旧版一致的 SSE（event/data）格式。
+//     （见 sse.go）把 gRPC 流事件转写为与旧版一致的 SSE（event/data）格式。
 type Server struct {
 	manager      *agent.Manager
 	authSvc      *auth.Service
@@ -110,7 +121,8 @@ func (s *Server) Start() {
 	s.startGateway()
 }
 
-// startGRPC 启动 gRPC 服务器
+// startGRPC 启动 gRPC 服务器，注册全部 RPC 服务实现（internal/server/rpc）
+// 并挂载鉴权拦截器（internal/server/middleware）
 func (s *Server) startGRPC() {
 	addr := s.grpcAddr()
 	lis, err := net.Listen("tcp", addr)
@@ -120,7 +132,7 @@ func (s *Server) startGRPC() {
 	}
 
 	// 声明鉴权拦截器
-	interceptor := NewAuthInterceptor(s.authSvc)
+	interceptor := middleware.NewAuthInterceptor(s.authSvc)
 	// 创建由 option 配置的 gRPC 服务器
 	grpcServer := grpc.NewServer(
 		// 给所有一元 RPC 装鉴权（可链式扩展更多中间件）
@@ -129,9 +141,9 @@ func (s *Server) startGRPC() {
 		grpc.ChainStreamInterceptor(interceptor.Stream()),
 	)
 
-	agentlypb.RegisterAuthServiceServer(grpcServer, NewAuthServer(s.authSvc))
-	agentlypb.RegisterAgentServiceServer(grpcServer, NewAgentServer(s.manager))
-	agentlypb.RegisterSessionServiceServer(grpcServer, NewSessionServer(s.manager, s.sessionStore, s.messageStore))
+	agentlypb.RegisterAuthServiceServer(grpcServer, rpc.NewAuthServer(s.authSvc))
+	agentlypb.RegisterAgentServiceServer(grpcServer, rpc.NewAgentServer(s.manager))
+	agentlypb.RegisterSessionServiceServer(grpcServer, rpc.NewSessionServer(s.manager, s.sessionStore, s.messageStore))
 
 	logger.Info("gRPC 服务启动，监听地址: %s", addr)
 	if err := grpcServer.Serve(lis); err != nil {
@@ -196,7 +208,7 @@ func (s *Server) startGateway() {
 	}
 
 	addr := s.httpAddr()
-	server := &http.Server{
+	httpServer := &http.Server{
 		Addr:         addr,
 		Handler:      corsMiddleware(mux),
 		ReadTimeout:  30 * time.Second,
@@ -205,143 +217,8 @@ func (s *Server) startGateway() {
 	}
 
 	logger.Info("HTTP 网关启动，监听地址: %s", addr)
-	if err := server.ListenAndServe(); err != nil {
+	if err := httpServer.ListenAndServe(); err != nil {
 		logger.Error("HTTP 网关启动失败: %v", err)
 		log.Fatalf("HTTP 网关启动失败: %v", err)
 	}
-}
-
-// sseChatHandler 返回自定义的 SSE 对话处理器：内部以 gRPC 客户端调用流式 Chat，
-// 并把 gRPC 事件流转写为与旧版一致的 SSE（event/data）格式。
-func (s *Server) sseChatHandler(client agentlypb.SessionServiceClient) runtime.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		sessionID := pathParams["session_id"]
-
-		var body struct {
-			Message   string `json:"message"`
-			AutoRoute *bool  `json:"auto_route"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
-			return
-		}
-
-		req := &agentlypb.ChatRequest{
-			SessionId: sessionID,
-			Message:   body.Message,
-			AutoRoute: body.AutoRoute,
-		}
-
-		// 透传 Authorization 到 gRPC metadata
-		ctx := r.Context()
-		if a := r.Header.Get("Authorization"); a != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", a)
-		}
-
-		stream, err := client.Chat(ctx, req)
-		if err != nil {
-			st := status.Convert(err)
-			writeJSONError(w, runtime.HTTPStatusFromCode(st.Code()), st.Message())
-			return
-		}
-
-		// 预读第一个事件：若为鉴权/校验类错误（如未登录、会话不存在、消息为空），
-		// 以标准 JSON 错误响应返回，保持与旧接口一致的 4xx 语义；否则进入 SSE 模式。
-		first, err := stream.Recv()
-		if err != nil {
-			if err == io.EOF {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-			st := status.Convert(err)
-			writeJSONError(w, runtime.HTTPStatusFromCode(st.Code()), st.Message())
-			return
-		}
-
-		// 进入 SSE 模式
-		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("X-Accel-Buffering", "no")
-
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			writeJSONError(w, http.StatusInternalServerError, "服务器不支持流式响应")
-			return
-		}
-
-		writeSSEEvent(w, flusher, first)
-		for {
-			ev, rErr := stream.Recv()
-			if rErr == io.EOF {
-				return
-			}
-			if rErr != nil {
-				st := status.Convert(rErr)
-				data, _ := json.Marshal(map[string]string{"error": st.Message()})
-				fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(data))
-				flusher.Flush()
-				return
-			}
-			writeSSEEvent(w, flusher, ev)
-		}
-	}
-}
-
-// writeSSEEvent 将一个 ChatEvent 按事件类型转写为旧版 SSE 格式
-func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, ev *agentlypb.ChatEvent) {
-	var data []byte
-	switch ev.GetType() {
-	case "route":
-		data, _ = json.Marshal(map[string]string{"agent_name": ev.GetAgentName(), "reason": ev.GetReason()})
-	case "message":
-		data, _ = json.Marshal(map[string]string{"content": ev.GetContent()})
-	case "tool_call":
-		data, _ = json.Marshal(map[string]string{"tool_name": ev.GetToolName(), "tool_args": ev.GetToolArgs()})
-	case "tool_result":
-		data, _ = json.Marshal(map[string]string{"tool_name": ev.GetToolName(), "tool_result": ev.GetToolResult()})
-	case "tool_error":
-		data, _ = json.Marshal(map[string]string{"tool_name": ev.GetToolName(), "error": ev.GetError()})
-	case "error":
-		data, _ = json.Marshal(map[string]string{"error": ev.GetError()})
-	case "done":
-		data = []byte("{}")
-	default:
-		data = []byte("{}")
-	}
-	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.GetType(), string(data))
-	flusher.Flush()
-}
-
-// gatewayErrorHandler 统一网关错误响应为 {code, message}，code 为 HTTP 状态码
-func gatewayErrorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Marshaler, w http.ResponseWriter, _ *http.Request, err error) {
-	st := status.Convert(err)
-	httpStatus := runtime.HTTPStatusFromCode(st.Code())
-	writeJSONError(w, httpStatus, st.Message())
-}
-
-// writeJSONError 写入统一的 JSON 错误响应
-func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"code":    statusCode,
-		"message": message,
-	})
-}
-
-// corsMiddleware 处理跨域请求
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }

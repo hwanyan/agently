@@ -1,5 +1,9 @@
 // Package agents 负责全部 Agent 的初始化、注册与编排
-// 约定：每个 Agent 子目录中包含 prompt.yaml，目录名 = Agent ID
+//
+// 注册约定：每个内置 Agent 对应 internal/agents/ 下的一个子目录，目录中包含 prompt.yaml。
+// Agent 的唯一标识（agent_id）由 prompt.yaml 内部的 agent_id 字段显式声明，而非由目录名隐式推断，
+// 这样目录名仅承担"组织代码文件"的作用，可自由重命名/重构，不会影响对外暴露的 Agent ID，
+// 也便于后续将 Agent 元信息迁移到数据库或配置中心等更集中的注册中心。
 package agents
 
 import (
@@ -21,6 +25,7 @@ import (
 // 之所以单独定义而不是复用 agent.AgentInfo，是因为 yaml 字段名与 Go 字段名映射规则不同，
 // 且 prompt.yaml 中的 system_prompt 是块标量，与 agent.AgentInfo.Prompt 的语义并不完全一致。
 type promptFile struct {
+	AgentID      string           `yaml:"agent_id"` // Agent 唯一标识，注册时以此字段为准
 	Name         string           `yaml:"name"`
 	Description  string           `yaml:"description"`
 	Role         string           `yaml:"role"`
@@ -31,76 +36,87 @@ type promptFile struct {
 
 // initPromptMapping 构建项目中全部 agent 与其对应的基本信息的映射关系
 // 即 { key(agent_id) : value(AgentInfo) }
-// 约定：agents/<agent_id>/prompt.yaml，目录名 = Agent ID
-// 说明：从编译时嵌入的 EmbeddedPrompts (embed.FS) 中读取，无需依赖外部文件路径
-func initPromptMapping() map[string]agent.AgentInfo {
+//
+// 约定：internal/agents/<任意目录名>/prompt.yaml，Agent ID 由 prompt.yaml 内的 agent_id 字段显式声明，
+// 与所在目录名无强制关联。若同一批 prompt.yaml 中出现重复的 agent_id，视为配置错误，直接 fail-fast。
+// 说明：从编译时嵌入的 EmbeddedPrompts (embed.FS) 中读取，无需依赖外部文件路径。
+func initPromptMapping() (map[string]agent.AgentInfo, error) {
 	logger.Info("构建项目中全部 agent 与其对应的基本信息的映射关系...")
 
 	prompts := make(map[string]agent.AgentInfo)
 	entries, err := EmbeddedPrompts.ReadDir(".")
 	if err != nil {
-		logger.Error("读取嵌入的 agents 目录失败: %v", err)
-		return prompts
+		return nil, fmt.Errorf("读取嵌入的 agents 目录失败: %w", err)
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		// 按约定，entry.Name 即是 agent_id
-		agentID := entry.Name()
-		promptPath := agentID + "/prompt.yaml"
+		dirName := entry.Name()
+		promptPath := dirName + "/prompt.yaml"
 
 		raw, e := EmbeddedPrompts.ReadFile(promptPath)
 		if e != nil {
-			logger.Warning("%s agent 的 Prompt 读取失败: %v", agentID, e)
+			logger.Warning("目录 [%s] 下的 prompt.yaml 读取失败，跳过: %v", dirName, e)
 			continue
 		}
-		agentInfo, ok := parseAgentPrompt(agentID, raw)
+		agentInfo, ok := parseAgentPrompt(dirName, raw)
 		if !ok {
 			continue
 		}
-		logger.Info("构建 %s agent 与其基本信息的映射关系成功", agentID)
-		prompts[agentID] = agentInfo
+		if existing, dup := prompts[agentInfo.ID]; dup {
+			return nil, fmt.Errorf(
+				"配置错误：agent_id [%s] 重复声明，分别位于目录 [%s] 与目录 [%s] 的 prompt.yaml 中，"+
+					"agent_id 必须全局唯一", agentInfo.ID, existing.SourceDir, dirName)
+		}
+		logger.Info("注册 Agent [%s]（来自目录 %s）成功", agentInfo.ID, dirName)
+		prompts[agentInfo.ID] = agentInfo
 	}
 
-	logger.Info("构建项目中全部 agent 与其对应的基本信息的映射关系结束")
-	return prompts
+	logger.Info("构建项目中全部 agent 与其对应的基本信息的映射关系结束，共 %d 个", len(prompts))
+	return prompts, nil
 }
 
 // parseAgentPrompt 将 prompt.yaml 解析为 agent.AgentInfo
 //
+// 参数 dirName 仅用于日志与错误提示中标识来源目录，不作为 Agent ID 使用。
 // 必填字段缺失时会跳过该 Agent 并打印 Warning。
-func parseAgentPrompt(agentID string, raw []byte) (agent.AgentInfo, bool) {
+func parseAgentPrompt(dirName string, raw []byte) (agent.AgentInfo, bool) {
 	var pf promptFile
 	if err := yaml.Unmarshal(raw, &pf); err != nil {
-		logger.Warning("%s agent 的 Prompt 解析失败: %v", agentID, err)
+		logger.Warning("目录 [%s] 的 prompt.yaml 解析失败: %v", dirName, err)
 		return agent.AgentInfo{}, false
 	}
 
+	if strings.TrimSpace(pf.AgentID) == "" {
+		logger.Warning("目录 [%s] 的 prompt.yaml 中未找到有效的 agent_id 内容，该字段为必填项", dirName)
+		return agent.AgentInfo{}, false
+	}
 	if pf.Name == "" {
-		logger.Warning("%s agent 的 Prompt 中未找到有效的 name 内容", agentID)
+		logger.Warning("%s agent 的 Prompt 中未找到有效的 name 内容", pf.AgentID)
 		return agent.AgentInfo{}, false
 	}
 	if pf.Description == "" {
-		logger.Warning("%s agent 的 Prompt 中未找到有效的 description 内容", agentID)
+		logger.Warning("%s agent 的 Prompt 中未找到有效的 description 内容", pf.AgentID)
 		return agent.AgentInfo{}, false
 	}
 	if pf.Role == "" {
-		logger.Warning("%s agent 的 Prompt 中未找到有效的 role 内容", agentID)
+		logger.Warning("%s agent 的 Prompt 中未找到有效的 role 内容", pf.AgentID)
 		return agent.AgentInfo{}, false
 	}
 	if strings.TrimSpace(pf.SystemPrompt) == "" {
-		logger.Warning("%s agent 的 Prompt 中未找到有效的 system_prompt 内容", agentID)
+		logger.Warning("%s agent 的 Prompt 中未找到有效的 system_prompt 内容", pf.AgentID)
 		return agent.AgentInfo{}, false
 	}
 
 	return agent.AgentInfo{
-		ID:          agentID,
+		ID:          pf.AgentID,
 		Name:        pf.Name,
 		Description: pf.Description,
 		Tools:       pf.Tools,
 		Role:        agent.AgentRole(pf.Role),
 		Prompt:      pf.SystemPrompt,
+		SourceDir:   dirName,
 	}, true
 }
 
@@ -122,8 +138,11 @@ func InitAgents(provider types.ConfigProvider) (*agent.Manager, error) {
 		return nil, err
 	}
 
-	// 2. 加载所有 prompt
-	prompts := initPromptMapping()
+	// 2. 加载所有 prompt（agent_id 重复等配置错误会在此直接 fail-fast）
+	prompts, err := initPromptMapping()
+	if err != nil {
+		return nil, err
+	}
 
 	// 3. 校验 Agent 的工具引用是否都能在配置中找到
 	if err := validateAgentToolsRef(prompts, provider); err != nil {

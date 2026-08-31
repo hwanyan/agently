@@ -11,18 +11,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// PromptConfig 提示词配置结构
-type PromptConfig struct {
-	Scene        string `yaml:"scene"`
-	Name         string `yaml:"name"`
-	SystemPrompt string `yaml:"system_prompt"`
-	Settings     struct {
-		Language          string `yaml:"language"`
-		Tone              string `yaml:"tone"`
-		MaxResponseLength int    `yaml:"max_response_length"`
-	} `yaml:"settings"`
-}
-
 // loadConfig 从YAML文件加载配置
 func loadConfig(configPath string) (*types.Config, error) {
 	// 读取配置文件

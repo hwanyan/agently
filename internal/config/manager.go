@@ -54,9 +54,7 @@ func NewManager(path string) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("加载配置文件失败: %w", err)
 	}
-
-	// TODO 基于 path（配置文件绝对路径），在 bin 目录的同级目录下生成 logs 目录
-	cfg.Log.FilePath = ""
+	cfg.Log.FilePath = deriveLogFilePath(absPath)
 
 	m := &Manager{
 		path:       absPath,
@@ -147,9 +145,21 @@ func (m *Manager) reload() error {
 	if err != nil {
 		return err
 	}
+	newCfg.Log.FilePath = deriveLogFilePath(m.path)
 	m.cfg.Store(newCfg)
 	logger.Info("配置热更新成功，已生效: %s", m.path)
 	return nil
+}
+
+// deriveLogFilePath 根据配置文件绝对路径反推日志文件路径前缀
+//
+// 日志路径不再从配置文件中读取，而是基于约定的部署目录结构自动生成：
+// 可执行文件与 config.yaml 同处于 bin 目录，日志目录 logs 与 bin 目录互为同级，
+// 即：可执行文件路径为 <项目根>/bin/agently 时，日志路径为 <项目根>/logs/agently。
+func deriveLogFilePath(configAbsPath string) string {
+	binDir := filepath.Dir(configAbsPath)
+	projectRoot := filepath.Dir(binDir)
+	return filepath.Join(projectRoot, "logs", "agently")
 }
 
 // Close 停止文件监听，释放相关资源

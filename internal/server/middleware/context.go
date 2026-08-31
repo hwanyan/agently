@@ -1,7 +1,10 @@
-// Package server 提供 Agently 全部 gRPC 服务实现、鉴权拦截器以及
-// gRPC + grpc-gateway 的启动编排。它取代了原先手写的 net/http 路由层，
-// 使所有请求路由统一收敛到 gRPC。
-package server
+// Package middleware 提供 gRPC 服务的横切关注点：鉴权拦截器与请求上下文传递。
+//
+// 之所以独立成包（而不是散落在 server 根包中），是因为鉴权拦截器与上下文注入是
+// 典型的"中间件层"关注点，与具体某个 RPC 方法的业务逻辑（internal/server/rpc）
+// 以及服务启动编排（internal/server 根包）在职责上完全正交，理应可以独立演进、
+// 独立测试，也便于未来新增更多横切中间件（如限流、审计日志）时统一收拢在此。
+package middleware
 
 import "context"
 

@@ -200,8 +200,11 @@ type GRPCConfig struct {
 }
 
 // LogConfig 日志配置
+//
+// 注意：FilePath 不通过配置文件设置（无 yaml tag），而是由 config.Manager 在加载配置时，
+// 基于配置文件所在目录反推部署路径后自动填充，详见 config.deriveLogFilePath。
 type LogConfig struct {
-	FilePath string `yaml:"file_path"` // 日志文件路径
+	FilePath string // 日志文件路径（程序自动推导，不可在 config.yaml 中配置）
 }
 
 // Config 应用程序总配置

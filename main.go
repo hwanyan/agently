@@ -25,9 +25,12 @@ func main() {
 	// 注册全部的 agent（内部用 provider() 取快照做 MCP 启动期校验，并把 provider 传给 LLM 与本地工具）
 	agentManager := initAgent(cm.Get)
 
-	// 初始化数据库和认证服务
-	db, authSvc, sessionStore, messageStore := initDatabase(cm.Get)
+	// 初始化数据库服务
+	db := initDatabase(cm.Get)
 	defer db.Close()
+
+	// 初始化认证服务、会话存储与消息存储
+	authSvc, sessionStore, messageStore := initServices(cm.Get, db)
 
 	// 启动 gRPC 服务与 HTTP 网关
 	startServer(cm.Get, agentManager, authSvc, sessionStore, messageStore)
@@ -75,12 +78,11 @@ func initLogger(provider types.ConfigProvider) {
 
 // initDatabase 初始化数据库服务
 //
-// 注意：返回的 *store.DB 是连接池句柄，其生命周期必须与进程一致；
+// 注意：返回的 *store.DB 是连接池句柄，其生命周期必须与主进程一致；
 // 由调用方（main）负责在进程退出时调用 db.Close()，
 // 切勿在本函数内使用 defer db.Close()，否则函数返回后连接池立刻被关闭，
 // 业务接口在后续调用 SQL 时会得到 "sql: database is closed" 错误。
-func initDatabase(provider types.ConfigProvider) (db *store.DB, authSvc *auth.Service,
-	sessionStore *store.SessionStore, messageStore *store.MessageStore) {
+func initDatabase(provider types.ConfigProvider) (db *store.DB) {
 	cfg := provider()
 	var err error
 	if cfg.Database.DSN == "" {
@@ -92,6 +94,13 @@ func initDatabase(provider types.ConfigProvider) (db *store.DB, authSvc *auth.Se
 		logger.Error("数据库连接失败: %v", err)
 		log.Fatalf("数据库连接失败: %v", err)
 	}
+	return db
+}
+
+// initServices 初始化相关服务
+func initServices(provider types.ConfigProvider, db *store.DB) (authSvc *auth.Service,
+	sessionStore *store.SessionStore, messageStore *store.MessageStore) {
+	cfg := provider()
 	if cfg.SMTP.Host == "" {
 		logger.Error("SMTP 未配置，邮箱验证服务无法启动，请在配置文件中填写 SMTP 配置")
 		log.Fatalf("SMTP 未配置，邮箱验证服务无法启动，请在配置文件中填写 SMTP 配置")
@@ -107,7 +116,7 @@ func initDatabase(provider types.ConfigProvider) (db *store.DB, authSvc *auth.Se
 	authSvc = auth.NewService(userStore, cfg.JWT, emailVerifySvc)
 	logger.Info("数据库连接成功，认证服务已初始化")
 
-	return db, authSvc, sessionStore, messageStore
+	return authSvc, sessionStore, messageStore
 }
 
 // startServer 启动 gRPC 服务与 grpc-gateway HTTP 网关

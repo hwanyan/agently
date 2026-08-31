@@ -1,4 +1,11 @@
-package server
+// Package rpc 承载全部 gRPC 服务方法的业务实现（AuthService / AgentService / SessionService）。
+//
+// 这一层只关心"某个 RPC 方法应该做什么"：参数校验、调用领域层（agent.Manager /
+// auth.Service / store.*）、把领域模型转换为 protobuf 响应。它不关心进程如何启动、
+// 监听地址如何计算、gRPC 与 grpc-gateway 如何编排——那些属于 internal/server 根包
+// （bootstrap 层）的职责；也不关心鉴权、上下文注入等横切逻辑——那些属于
+// internal/server/middleware 包。三者分层后，每一层都可以独立理解、独立测试。
+package rpc
 
 import (
 	"time"

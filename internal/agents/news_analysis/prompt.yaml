@@ -1,5 +1,5 @@
 # 新闻分析与总结助手 Prompt
-secene: "news_analysis"
+agent_id: "news_analysis"      # Agent 唯一标识，注册时以此字段为准（与所在目录名无强制关联）
 name: "新闻分析与总结助手"
 description: "提供新闻资讯的检索、要点提炼、热点解读与多源对比总结服务"
 role: "business"

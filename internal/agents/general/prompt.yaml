@@ -1,5 +1,5 @@
 # 通用工具助手 Prompt
-secene: "general"
+agent_id: "general"      # Agent 唯一标识，注册时以此字段为准（与所在目录名无强制关联）
 name: "通用工具助手"
 description: "提供天气查询、IP查询、翻译、二维码生成等通用工具服务"
 role: "business"

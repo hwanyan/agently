@@ -1,5 +1,5 @@
 # 意图路由 Agent Prompt
-secene: "intent_router"
+agent_id: "intent_router"      # Agent 唯一标识，注册时以此字段为准（与所在目录名无强制关联）
 name: "意图路由助手"
 description: "自动分析用户意图并路由到合适的专业Agent处理"
 role: "system"

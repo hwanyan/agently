@@ -1,4 +1,4 @@
-package server
+package rpc
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/hwanyan/agently/internal/agent"
 	"github.com/hwanyan/agently/internal/logger"
+	"github.com/hwanyan/agently/internal/server/middleware"
 	"github.com/hwanyan/agently/internal/store"
 	agentlypb "github.com/hwanyan/agently/pb/gen"
 	"github.com/hwanyan/agently/pkg/types"
@@ -34,7 +35,7 @@ func NewSessionServer(manager *agent.Manager, sessionStore *store.SessionStore, 
 
 // ListSessions 查询当前用户的会话列表
 func (s *SessionServer) ListSessions(ctx context.Context, req *agentlypb.ListSessionsRequest) (*agentlypb.ListSessionsResponse, error) {
-	userID := UserIDFromContext(ctx)
+	userID := middleware.UserIDFromContext(ctx)
 
 	limit := int(req.GetLimit())
 	if limit <= 0 {
@@ -65,7 +66,7 @@ func (s *SessionServer) ListSessions(ctx context.Context, req *agentlypb.ListSes
 
 // CreateSession 创建新会话
 func (s *SessionServer) CreateSession(ctx context.Context, req *agentlypb.CreateSessionRequest) (*agentlypb.CreateSessionResponse, error) {
-	userID := UserIDFromContext(ctx)
+	userID := middleware.UserIDFromContext(ctx)
 
 	if req.GetAgentId() == "" {
 		logger.Warning("创建会话时AgentID为空")
@@ -88,7 +89,7 @@ func (s *SessionServer) CreateSession(ctx context.Context, req *agentlypb.Create
 
 // ListMessages 查询会话消息历史
 func (s *SessionServer) ListMessages(ctx context.Context, req *agentlypb.ListMessagesRequest) (*agentlypb.ListMessagesResponse, error) {
-	userID := UserIDFromContext(ctx)
+	userID := middleware.UserIDFromContext(ctx)
 
 	if req.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "缺少会话 ID")
@@ -127,7 +128,7 @@ func (s *SessionServer) ListMessages(ctx context.Context, req *agentlypb.ListMes
 
 // ArchiveSession 归档会话（软删除）
 func (s *SessionServer) ArchiveSession(ctx context.Context, req *agentlypb.ArchiveSessionRequest) (*agentlypb.ArchiveSessionResponse, error) {
-	userID := UserIDFromContext(ctx)
+	userID := middleware.UserIDFromContext(ctx)
 	if req.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "缺少会话 ID")
 	}
@@ -144,7 +145,7 @@ func (s *SessionServer) ArchiveSession(ctx context.Context, req *agentlypb.Archi
 // Chat 在指定会话中发送消息，服务端流式返回对话事件（对应旧 SSE 流）
 func (s *SessionServer) Chat(req *agentlypb.ChatRequest, stream agentlypb.SessionService_ChatServer) error {
 	ctx := stream.Context()
-	userID := UserIDFromContext(ctx)
+	userID := middleware.UserIDFromContext(ctx)
 
 	sessionID := req.GetSessionId()
 	if sessionID == "" {

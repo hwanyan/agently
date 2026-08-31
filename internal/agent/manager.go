@@ -282,7 +282,7 @@ const (
 
 // AgentInfo Agent信息（用于展示）
 type AgentInfo struct {
-	ID          string     // Agent唯一标识
+	ID          string     // Agent唯一标识，由 prompt.yaml 中的 agent_id 字段显式声明
 	Name        string     // Agent显示名称
 	Description string     // Agent描述
 	Tools       AgentTools // Agent 工具配置（声明本 Agent 依赖的本地工具组与 MCP 服务）
@@ -290,6 +290,7 @@ type AgentInfo struct {
 	Role        AgentRole  // Agent角色：system（系统级）或 business（业务级）
 	IsActive    bool       // 是否为当前激活的Agent
 	Registered  bool       // 是否已注册
+	SourceDir   string     // 该 Agent 源文件（prompt.yaml）所在目录名，仅用于日志/排障，不作为标识使用
 }
 
 // AgentTools Agent 的工具依赖声明
