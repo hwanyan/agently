@@ -153,12 +153,18 @@ func (m *Manager) reload() error {
 
 // deriveLogFilePath 根据配置文件绝对路径反推日志文件路径前缀
 //
-// 日志路径不再从配置文件中读取，而是基于约定的部署目录结构自动生成：
-// 可执行文件与 config.yaml 同处于 bin 目录，日志目录 logs 与 bin 目录互为同级，
-// 即：可执行文件路径为 <项目根>/bin/agently 时，日志路径为 <项目根>/logs/agently。
+// 日志路径不再从配置文件中读取，而是基于约定的部署目录结构自动生成：约定配置文件所在目录
+// 与日志目录 logs 互为同级（同处于某个"项目根目录"下），即：配置文件路径为
+// <项目根>/<任意子目录>/config.yaml 时，日志路径为 <项目根>/logs/agently。
+//
+// 该约定同时兼容两种常见部署布局：
+//   - 可执行文件与 config.yaml 同处于 bin 目录（<项目根>/bin/{agently,config.yaml}）；
+//   - 可执行文件与 config.yaml 分离部署（<项目根>/bin/agently、<项目根>/config/config.yaml），
+//     此时通过 -config 传入配置文件路径或所在目录（见 main.go resolveConfigPath），
+//     只要 config 目录与 bin 目录同为项目根的直接子目录，推导结果一致，无需额外配置日志路径。
 func deriveLogFilePath(configAbsPath string) string {
-	binDir := filepath.Dir(configAbsPath)
-	projectRoot := filepath.Dir(binDir)
+	configDir := filepath.Dir(configAbsPath)
+	projectRoot := filepath.Dir(configDir)
 	return filepath.Join(projectRoot, "logs", "agently")
 }
 

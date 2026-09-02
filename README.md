@@ -252,10 +252,17 @@ mcp:
 
 ### 5. 运行
 
-在仓库根目录直接运行（配置默认从 `./config.yaml` 加载）：
+在仓库根目录直接运行（配置默认从 `./config.yaml` 加载，即相对于进程 `WorkingDirectory`）：
 
 ```bash
 go run main.go
+```
+
+也可通过 `-config` 显式指定配置文件路径（或其所在目录，此时默认加载该目录下的 `config.yaml`）——常用于将可执行文件与配置文件分开部署的场景（如 systemd 服务，见下方"部署"一节）：
+
+```bash
+go run main.go -config /opt/agently/config              # 传目录，自动补全为 /opt/agently/config/config.yaml
+go run main.go -config /opt/agently/config/config.yaml  # 或直接传完整文件路径
 ```
 
 如需交叉编译为 Linux 可执行文件：
@@ -264,7 +271,35 @@ go run main.go
 bash bd.sh agently-server   # 生成 agently-server（GOOS=linux GOARCH=amd64）
 ```
 
-### 6. 启动与交互示例
+### 6. 部署（systemd 示例）
+
+生产环境建议将可执行文件与配置文件分离部署，便于配置变更、备份与权限收敛（如仅让运行用户拥有配置目录的读权限）：
+
+```
+/opt/agently/
+├── bin/
+│   └── agently          # 交叉编译产物
+├── config/
+│   └── config.yaml
+└── logs/
+```
+
+对应的 `/etc/systemd/system/agently.service`：
+
+```ini
+[Service]
+...
+WorkingDirectory=/opt/agently/bin
+ExecStart=/opt/agently/bin/agently -config /opt/agently/config
+...
+ReadWritePaths=/opt/agently/logs
+```
+
+修改后执行 `systemctl daemon-reload && systemctl restart agently` 生效。
+
+> 注意：日志路径按约定的部署目录结构自动推导（取配置文件所在目录的**上一级**作为项目根，日志落在 `<项目根>/logs/`），因此 `config/` 目录必须与 `bin/` 目录同为项目根的**直接子目录**（如上例 `/opt/agently/{bin,config,logs}/`），才能推导出正确的日志路径 `/opt/agently/logs/agently`；`ReadWritePaths` 应指向该推导结果，而不是配置目录下的路径。
+
+### 7. 启动与交互示例
 
 > 本项目已移除 CLI 交互模式，改为**纯服务端**运行：启动后同时提供 gRPC 服务（内部回环）与 grpc-gateway 的 REST/SSE 接口，通过 HTTP 客户端（前端 / curl / Postman）交互。
 

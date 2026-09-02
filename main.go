@@ -2,7 +2,10 @@
 package main
 
 import (
+	"flag"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/hwanyan/agently/internal/a2a"
 	"github.com/hwanyan/agently/internal/agent"
@@ -16,8 +19,15 @@ import (
 )
 
 func main() {
+	// -config 支持传入 config.yaml 的完整文件路径，也支持传入其所在目录（此时默认加载
+	// 该目录下的 config.yaml）。未指定时默认 "./config.yaml"（相对于进程 WorkingDirectory），
+	// 与此前行为保持完全一致，不影响未传该参数的现有部署（如已上线的 systemd unit）。
+	configPath := flag.String("config", "./config.yaml",
+		"配置文件路径；可传 config.yaml 的完整文件路径，或其所在目录")
+	flag.Parse()
+
 	// 加载配置（支持热更新：cm.Get 本身就是 ConfigProvider，统一以该接口向下游分发）
-	cm := initConfigManager()
+	cm := initConfigManager(*configPath)
 	defer cm.Close()
 
 	// 初始化日志系统
@@ -42,12 +52,18 @@ func main() {
 
 // initConfigManager 创建配置管理器并启动热更新监听（watch 模式）
 //
+// path 支持两种形式：
+//   - 完整文件路径，如 "/opt/agently/config/config.yaml"；
+//   - 目录路径，如 "/opt/agently/config"（该目录下须存在 config.yaml）——通过 resolveConfigPath
+//     判断 path 是否为已存在的目录来自动补全文件名，方便 systemd ExecStart 里直接传目录。
+//
 // 首次加载失败即 fail-fast；watch 启动失败也视为 fail-fast，避免"看似支持热更新、实际未生效"的隐性故障。
 // config.yaml 后续内容发生变更时，会在内存中原子替换，无需重启进程即可生效（受限于部分启动期
 // 一次性配置项，如监听端口/数据库连接池/日志路径/MCP服务器列表，详见 types.ConfigProvider 的说明）。
 // cm.Get 满足 types.ConfigProvider 签名，可直接作为配置提供者传递给下游组件。
-func initConfigManager() *config.Manager {
-	cm, err := config.NewManager("./config.yaml")
+func initConfigManager(path string) *config.Manager {
+	resolvedPath := resolveConfigPath(path)
+	cm, err := config.NewManager(resolvedPath)
 	if err != nil {
 		logger.Error("加载配置失败: %v", err)
 		log.Fatalf("加载配置失败: %v", err)
@@ -57,6 +73,16 @@ func initConfigManager() *config.Manager {
 		log.Fatalf("启动配置热更新监听失败: %v", err)
 	}
 	return cm
+}
+
+// resolveConfigPath 将 -config 参数值规整为具体的配置文件路径：
+// 若该路径是已存在的目录，则自动拼接上 "config.yaml"；否则原样返回（视为文件路径，
+// 交由 config.NewManager/loadConfig 打开时报告"文件不存在"等具体错误，这里不做额外判断）。
+func resolveConfigPath(path string) string {
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return filepath.Join(path, "config.yaml")
+	}
+	return path
 }
 
 // initAgents 加载 agent
