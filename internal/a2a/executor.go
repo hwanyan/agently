@@ -54,7 +54,12 @@ func newAgentExecutor(mgr *agent.Manager, agentID string) a2asrv.AgentExecutor {
 				return
 			}
 
-			logger.Info("A2A 请求：Agent [%s]，消息：%s", agentID, text)
+			// 审计日志：caller 是调用方在请求中显式声明并通过校验的 tenant_id，
+			// 由 tenantAuthInterceptor 鉴权通过后写入 CallContext.User，SDK 自动透传到
+			// ExecutorContext.User（见 auth.go 中 Before 方法的注释）。未启用鉴权、或该请求
+			// 未经过鉴权拦截器时，ec.User 仍非 nil 但 Authenticated=false，统一记为 "anonymous"。
+			caller := callerName(ec)
+			logger.Info("A2A 请求：租户 [%s]，Agent [%s]，TaskID [%s]，消息：%s", caller, agentID, ec.TaskID, text)
 
 			// 通知客户端任务进入执行中（非终态，后续事件继续被消费）
 			// 这里通过 yield 发送一个“任务执行中”的状态事件。如果 yield 返回 false，
@@ -98,34 +103,46 @@ func newAgentExecutor(mgr *agent.Manager, agentID string) a2asrv.AgentExecutor {
 					if !yield(event, nil) {
 						return
 					}
-			case types.StreamEventError:
-				// 致命错误（如 LLM 调用失败）：记录错误信息，循环结束后以失败终态收尾，
-				// 而不是把错误文本当作正常回复写入 Artifact。
-				fatalErr = ev.Error
-			default:
-				// tool_call / tool_result / tool_error 属于过程事件，不计入最终回复；
-				// 如需要在流式过程透出工具调用，可在此扩展为额外的 Artifact 事件。
+				case types.StreamEventError:
+					// 致命错误（如 LLM 调用失败）：记录错误信息，循环结束后以失败终态收尾，
+					// 而不是把错误文本当作正常回复写入 Artifact。
+					fatalErr = ev.Error
+				default:
+					// tool_call / tool_result / tool_error 属于过程事件，不计入最终回复；
+					// 如需要在流式过程透出工具调用，可在此扩展为额外的 Artifact 事件。
+				}
 			}
-		}
 
-		// 致命错误：以失败终态结束任务
-		if fatalErr != "" {
-			yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateFailed,
-				a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("处理失败: "+fatalErr))), nil)
-			return
-		}
+			// 致命错误：以失败终态结束任务
+			if fatalErr != "" {
+				logger.Warning("A2A 请求处理失败：租户 [%s]，Agent [%s]，TaskID [%s]，原因：%s", caller, agentID, ec.TaskID, fatalErr)
+				yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateFailed,
+					a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("处理失败: "+fatalErr))), nil)
+				return
+			}
 
-		// 无任何文本产出时兜底，避免任务"空转"结束
-		if full.Len() == 0 {
-			yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("（未产生文本回复）")), nil)
-			return
-		}
+			// 无任何文本产出时兜底，避免任务"空转"结束
+			if full.Len() == 0 {
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("（未产生文本回复）")), nil)
+				return
+			}
 
-		// 正常结束：下发 Completed 终态事件。回复文本已由上面的 Artifact 增量事件完整承载，
-		// 此处不再产出内容重复的 Message，避免消费方在 artifacts 与 history 中收到两份相同内容。
-		yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil), nil)
+			// 正常结束：下发 Completed 终态事件。回复文本已由上面的 Artifact 增量事件完整承载，
+			// 此处不再产出内容重复的 Message，避免消费方在 artifacts 与 history 中收到两份相同内容。
+			logger.Info("A2A 请求处理完成：租户 [%s]，Agent [%s]，TaskID [%s]，回复长度：%d", caller, agentID, ec.TaskID, full.Len())
+			yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil), nil)
 		}
 	})
+}
+
+// callerName 从 ExecutorContext.User 中提取调用方标识（tenant_id），用于审计日志。
+// User 由 tenantAuthInterceptor.Before 鉴权通过后设置并被 SDK 透传到此处（见 auth.go）；
+// 未启用鉴权、或该请求未经过鉴权拦截器时，User.Authenticated 为 false，统一记为 "anonymous"。
+func callerName(ec *a2asrv.ExecutorContext) string {
+	if ec.User != nil && ec.User.Authenticated && ec.User.Name != "" {
+		return ec.User.Name
+	}
+	return "anonymous"
 }
 
 // extractText 从 A2A Message 的 Parts 中提取全部文本内容

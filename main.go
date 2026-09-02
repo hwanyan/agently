@@ -134,7 +134,10 @@ func startA2AServer(provider types.ConfigProvider, manager *agent.Manager) {
 		logger.Info("未配置 A2A 服务端口（a2a.port），跳过 A2A 服务启动")
 		return
 	}
-	srv := a2a.NewServer(manager, &cfg.A2A)
+	srv, err := a2a.NewServer(manager, &cfg.A2A)
+	if err != nil {
+		log.Fatalf("A2A 服务初始化失败: %v", err)
+	}
 	go srv.Start()
 }
 

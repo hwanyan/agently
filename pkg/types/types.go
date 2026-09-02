@@ -199,6 +199,18 @@ type GRPCConfig struct {
 	Host string `yaml:"host"` // 仅监听回环
 }
 
+// A2ATenant 是 A2A JSON-RPC 端点的一个鉴权租户（调用方）。
+//
+// 采用"TenantID + Token"双因子模型，而非单一共享密钥/密钥列表：TenantID 由 Agently 一方
+// 预先分配并写入本配置，是调用方身份的唯一事实依据；调用方必须显式声明自己的 TenantID
+// （而不是让服务端拿着 Token 去逐个撞库反推身份）。鉴权时服务端按 TenantID 做 O(1) 查找，
+// 只对该租户绑定的 Token 做一次比较，语义清晰、审计天然精确，类似 AWS AccessKeyId/SecretKey
+// 或 OAuth2 client_id/client_secret 的做法。
+type A2ATenant struct {
+	TenantID string `yaml:"tenant_id"` // 调用方唯一标识，由 Agently 分配，调用时需在请求中显式传递
+	Token    string `yaml:"token"`     // 该租户专属密钥，与 TenantID 配对校验
+}
+
 // A2AConfig A2A（Agent-to-Agent）协议服务配置
 //
 // A2A 服务将每个业务 Agent 暴露为符合 Agent2Agent 协议（a2a-protocol.org）的独立端点，
@@ -207,12 +219,11 @@ type A2AConfig struct {
 	Host      string `yaml:"host"`       // A2A 服务监听地址，默认 0.0.0.0
 	Port      int    `yaml:"port"`       // A2A 服务端口（0 表示不启动 A2A 服务）
 	PublicURL string `yaml:"public_url"` // 对外可达的基础 URL（用于 AgentCard 的 url 字段），留空则按 host:port 推导
-	// AuthToken 是 A2A JSON-RPC 端点的共享密钥（Bearer Token）。
-	// 调用方需在请求头携带 Authorization: Bearer <token>，服务端做常量时间比较校验。
-	// 留空表示不鉴权（仅建议本地/内网调试使用）。
-	// 生产环境建议通过环境变量 AGENTLY_A2A_AUTH_TOKEN 注入，而非明文写在本文件中；
-	// 若同时配置了环境变量与本字段，环境变量优先生效。
-	AuthToken string `yaml:"auth_token"`
+
+	// Tenants 是允许调用本 A2A 服务的租户列表，需预先由 Agently 一方分配 TenantID 与 Token
+	// 并写入本配置。调用方发起请求时必须同时携带 TenantID 与 Token（见 internal/a2a/auth.go），
+	// 二者均通过校验才允许调用；列表为空表示不启用鉴权（仅建议本地/内网调试使用）。
+	Tenants []A2ATenant `yaml:"tenants"`
 }
 
 // LogConfig 日志配置

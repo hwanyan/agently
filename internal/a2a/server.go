@@ -23,11 +23,19 @@ import (
 type Server struct {
 	manager *agent.Manager
 	cfg     *types.A2AConfig
+	tenants map[string]string // tenant_id -> token，已解析并校验过；为空表示不启用鉴权
 }
 
-// NewServer 创建 A2A 服务编排器
-func NewServer(manager *agent.Manager, cfg *types.A2AConfig) *Server {
-	return &Server{manager: manager, cfg: cfg}
+// NewServer 创建 A2A 服务编排器。
+//
+// 租户凭证在此处一次性解析并校验（tenant_id/token 均非空、互不重复等），
+// 校验失败直接返回 error，遵循本项目"启动期 fail-fast"的惯例，避免带着错误配置起服务。
+func NewServer(manager *agent.Manager, cfg *types.A2AConfig) (*Server, error) {
+	tenants, err := resolveTenants(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{manager: manager, cfg: cfg, tenants: tenants}, nil
 }
 
 // Start 启动 A2A HTTP 服务（阻塞运行，通常以 goroutine 方式调用）
@@ -57,30 +65,34 @@ func (s *Server) register(mux *http.ServeMux) {
 		logger.Warning("未配置 a2a.public_url，AgentCard 将使用本机推导地址（%s），仅供本地/内网直连测试；给第三方使用请配置 a2a.public_url", s.publicBaseURL())
 	}
 
-	// 解析鉴权密钥：环境变量 AGENTLY_A2A_AUTH_TOKEN 优先于 config.yaml 的 a2a.auth_token。
-	// 未配置时 JSON-RPC 端点不做任何鉴权，任何人都能直接调用——仅建议本地/内网调试使用。
-	token := resolveAuthToken(s.cfg.AuthToken)
-	authEnabled := token != ""
+	// 租户凭证已在 NewServer 中解析并校验完毕；为空表示未启用鉴权。
+	authEnabled := len(s.tenants) > 0
 	if !authEnabled {
-		logger.Warning("未配置 A2A 鉴权密钥（环境变量 %s 或 config.yaml 的 a2a.auth_token），"+
-			"JSON-RPC 端点不做鉴权，任何人都可直接调用；给第三方/公网使用前务必配置", authTokenEnvVar)
+		logger.Warning("未配置 A2A 鉴权租户（config.yaml 的 a2a.tenants），" +
+			"JSON-RPC 端点不做鉴权，任何人都可直接调用；给第三方/公网使用前务必配置")
+	} else {
+		tenantIDs := make([]string, 0, len(s.tenants))
+		for id := range s.tenants {
+			tenantIDs = append(tenantIDs, id)
+		}
+		logger.Info("A2A 鉴权已启用，已注册租户: %s", strings.Join(tenantIDs, ", "))
 	}
 
 	for _, info := range s.manager.List() { // List() 已过滤系统 Agent，仅暴露业务 Agent
 		agentID := info.ID
 
-		// JSON-RPC 端点：仅当配置了鉴权密钥时才挂载 bearerAuthInterceptor
+		// JSON-RPC 端点：仅当配置了鉴权租户时才挂载 tenantAuthInterceptor
 		executor := newAgentExecutor(s.manager, agentID)
 		var opts []a2asrv.RequestHandlerOption
 		if authEnabled {
-			opts = append(opts, a2asrv.WithCallInterceptors(newBearerAuthInterceptor(token)))
+			opts = append(opts, a2asrv.WithCallInterceptors(newTenantAuthInterceptor(s.tenants)))
 		}
 		handler := a2asrv.NewHandler(executor, opts...)
 		mux.Handle(fmt.Sprintf("/a2a/%s", agentID), a2asrv.NewJSONRPCHandler(handler))
 
 		// AgentCard 端点：AgentCard 本身按 A2A 惯例保持公开可读（供发现），不做鉴权；
 		// 但当 JSON-RPC 端点启用了鉴权时，需要在 Card 里如实声明 securitySchemes，
-		// 让客户端在真正调用前就知道要带 Bearer token。
+		// 让客户端在真正调用前就知道要带 X-A2A-Tenant-Id + Bearer token。
 		endpointURL := fmt.Sprintf("%s/a2a/%s", s.publicBaseURL(), agentID)
 		card := buildAgentCard(info, endpointURL, authEnabled)
 		mux.Handle(

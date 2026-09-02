@@ -190,8 +190,8 @@ a2a:
   host: "0.0.0.0"     # A2A 服务监听地址
   port: 9090          # A2A 服务端口（0 表示不启动 A2A 服务）
   public_url: ""      # 对外可达基础 URL（用于 AgentCard 的 url 字段），给第三方使用必须配置；留空则按 host:port 本机推导（仅限本地/内网直连测试）
-  auth_token: ""      # JSON-RPC 端点的 Bearer Token 共享密钥；留空表示不鉴权（仅建议本地/内网调试）。
-                      # 生产环境建议改用环境变量 AGENTLY_A2A_AUTH_TOKEN 注入（优先级高于本字段）
+  tenants: []         # 鉴权租户列表：预先为每个调用方分配 tenant_id + token；调用方需同时携带
+                      # X-A2A-Tenant-Id 与 Authorization: Bearer <token>；为空表示不鉴权（仅限本地/内网调试）
 
 # 数据库配置（PostgreSQL）
 database:
@@ -642,18 +642,22 @@ a2a:
   host: "0.0.0.0"       # A2A 服务监听地址
   port: 9090            # A2A 服务端口（0 表示不启动 A2A 服务）
   public_url: ""        # 对外可达基础 URL；给第三方使用必须配置（如 nginx/ingress 反代后的域名或服务器对外 IP），留空则本机推导（仅限本地/内网直连测试）
-  auth_token: ""        # JSON-RPC 端点的 Bearer Token 共享密钥；留空表示不鉴权（仅建议本地/内网调试）
+  tenants: []            # 鉴权租户列表：预先为每个调用方分配 tenant_id + token，写入本配置
+                         # tenants:
+                         #   - tenant_id: "partner-a"
+                         #     token: "xxxxxxxx"
 ```
 
 ### 快速体验
 
 ```bash
-# 1) 查看 news_analysis 的 AgentCard（未启用鉴权时无需 Token 即可访问）
+# 1) 查看 news_analysis 的 AgentCard（未启用鉴权时无需凭证即可访问）
 curl http://localhost:9090/a2a/news_analysis/.well-known/agent-card.json
 
-# 2) 若已启用鉴权，调用 JSON-RPC 端点需携带 Bearer Token
+# 2) 若已启用鉴权，调用 JSON-RPC 端点需同时携带 X-A2A-Tenant-Id 与 Bearer Token
 curl -X POST http://localhost:9090/a2a/news_analysis \
-  -H "Authorization: Bearer <你配置的 token>" \
+  -H "X-A2A-Tenant-Id: partner-a" \
+  -H "Authorization: Bearer <partner-a 对应的 token>" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"帮我分析今天的科技新闻"}]}}}'
 
@@ -664,21 +668,36 @@ a2a send    http://localhost:9090/a2a/news_analysis "帮我分析今天的科技
 
 也可以用任意 A2A SDK/客户端（如 `a2aclient.NewFromCard` 从 AgentCard 创建客户端后 `SendMessage`）进行调用。
 
-### 鉴权（Bearer Token）
+### 鉴权（TenantID + Token 双因子）与调用来源审计
 
-JSON-RPC 端点支持基于共享密钥（Bearer Token）的鉴权，实现见 `internal/a2a/auth.go`：
+JSON-RPC 端点采用"TenantID + Token"双因子鉴权模型（而非单一共享密钥），实现见 `internal/a2a/auth.go`：
 
-- **启用方式**：配置 `a2a.auth_token`，或（推荐）设置环境变量 `AGENTLY_A2A_AUTH_TOKEN`（优先级高于配置文件，避免密钥明文落盘）。留空则不鉴权，仅建议本地/内网调试使用。
-- **校验方式**：基于 A2A SDK 官方提供的 `a2asrv.CallInterceptor` 扩展点，在请求进入具体业务 Agent 之前完成校验（鉴权失败不消耗任何 LLM/工具调用成本）；密钥比较使用 `crypto/subtle.ConstantTimeCompare` 常量时间比较，避免时序攻击。
+- **模型设计**：Agently 一方预先为每个调用方（其他 Agent/合作方）分配一对 `(tenant_id, token)` 并写入 `a2a.tenants` 配置；调用方发起请求时必须**显式声明自己的身份**——同时携带：
+  - `X-A2A-Tenant-Id: <tenant_id>` —— 声明"我是谁"；
+  - `Authorization: Bearer <token>` —— 证明"我确实是我自称的那个人"。
+
+  服务端按 `tenant_id` 做 O(1) 查找到该租户预先分配的 token，再与请求携带的 token 做一次比较——而不是拿着 token 去一堆密钥里挨个撞库反推身份。这与 AWS AccessKeyId/SecretKey、OAuth2 client_id/client_secret 是同一类模型，语义清晰，审计身份与鉴权结果天然一致，不存在"猜出是谁调用的"这种歧义。
+- **校验方式**：基于 A2A SDK 官方提供的 `a2asrv.CallInterceptor` 扩展点，在请求进入具体业务 Agent 之前完成校验（鉴权失败不消耗任何 LLM/工具调用成本）；`tenant_id` 为调用方主动声明的非机密信息，查找耗时无需特殊处理，真正的密钥比较使用 `crypto/subtle.ConstantTimeCompare` 常量时间比较，避免时序攻击。
+- **防租户枚举**：无论是"缺少必需头"、"tenant_id 不存在"还是"token 不匹配"，一律返回同一句笼统错误，不向客户端暴露具体是哪个环节失败，避免第三方通过报错内容反向探测出哪些 `tenant_id` 是已注册的。
 - **协议对齐**：鉴权失败返回 `a2a.ErrUnauthenticated`，由 SDK 自动映射为标准 JSON-RPC 错误码 `-31401` 与 HTTP `401`。
-- **AgentCard 如实声明**：一旦启用鉴权，对应 Agent 的 AgentCard 会在 `securitySchemes`/`securityRequirements` 中声明需要 `Bearer` 认证（符合 A2A 协议规定的发现机制），第三方客户端读取 Card 后即可提前知道要携带 Token，无需先试探性调用一次再被拒绝。
-- **AgentCard 端点本身不鉴权**：按 A2A 惯例，`.well-known/agent-card.json` 保持公开可读以供发现；仅 JSON-RPC 调用端点受 Token 保护。
+- **AgentCard 如实声明**：一旦启用鉴权，对应 Agent 的 AgentCard 会在 `securitySchemes` 中同时声明 `tenantId`（`APIKeySecurityScheme`，对应 `X-A2A-Tenant-Id` 头）与 `bearerAuth`（`HTTPAuthSecurityScheme`，对应 `Authorization: Bearer`），并放进同一条 `securityRequirements` 记录——A2A 协议规定同一条记录内的多个 key 是 **AND** 语义，如实表达"两者缺一不可"。第三方客户端读取 Card 后即可提前知道要携带哪些凭证，无需先试探性调用一次再被拒绝。
+- **AgentCard 端点本身不鉴权**：按 A2A 惯例，`.well-known/agent-card.json` 保持公开可读以供发现；仅 JSON-RPC 调用端点受保护。
+- **调用来源审计**：鉴权通过后，校验成功的 `tenant_id` 会写入 `CallContext.User`，并由 SDK 自动透传到 `ExecutorContext.User`；`executor.go` 据此在请求开始/完成/失败三个节点打印审计日志，形如：
+
+  ```
+  A2A 请求：租户 [partner-a]，Agent [news_analysis]，TaskID [xxxx]，消息：...
+  A2A 请求处理完成：租户 [partner-a]，Agent [news_analysis]，TaskID [xxxx]，回复长度：128
+  ```
+
+  未启用鉴权、或该请求未经过鉴权拦截器时统一记为 `anonymous`。当前审计仅落在运行日志（`internal/logger`），若需要结构化落库/接入统一审计系统，可在 `executor.go` 的对应日志点旁扩展写入专门的审计存储（如新增一张 `a2a_audit_log` 表，记录 tenant_id/agentID/taskID/时间/结果等字段）。
+- **配置校验（fail-fast）**：`NewServer` 在启动期一次性校验 `a2a.tenants`——`tenant_id`/`token` 均不能为空、`tenant_id` 不能重复、`token` 也不能重复（否则一个 token 能冒充多个 tenant_id，双因子鉴权失去意义）；任何一项不满足都会在启动时直接报错退出，而不是带着错误配置起服务。
+- **调用方需要配合的部分**：每个调用方必须使用 Agently 一方分配给自己的**专属** `tenant_id` + `token` 组合，不能互相共享；分配、轮换、吊销目前需手动改配置文件重启生效，尚无在线的凭证管理接口。
 
 ### 实现说明与限制
 
 - 桥接层见 `internal/a2a/`：`executor.go` 将 A2A 消息转成文本、调用对应业务 Agent 的 `ProcessMessageStream`，流式产出 `Working` 状态事件 + 增量 `Artifact` 事件（承载回复文本），最终以 `Completed`/`Failed` 终态事件收尾（支持 `message/stream` 流式；回复内容统一在 `task.artifacts` 中，不再重复写入 `task.history` 的 Message）。
 - **会话隔离**：业务 Agent 的对话历史（`BasicAgent.history`）为实例级共享，与现有 gRPC 对话层行为一致；A2A 层的多会话/多客户端并发会共享同一份历史并受 `streamDone` 串行化。如需按 A2A `contextId` 严格隔离多会话，需后续为每个上下文维护独立的 Agent 实例或历史。
-- **鉴权粒度**：当前是"整个 A2A 服务一把共享密钥"，不区分调用方身份、不区分不同业务 Agent 的权限。如需按调用方分别签发/吊销凭证，或按 Agent 精细化授权，需扩展为多 Token/OAuth2 等方案。
+- **鉴权粒度**：当前是"某个租户能访问全部业务 Agent"，不支持"某租户只能访问部分 Agent"这类按 Agent 维度的精细化授权，也没有在线的凭证签发/吊销接口（改配置需重启生效）。如需更细粒度的访问控制或凭证生命周期管理，需扩展为 OAuth2/mTLS 等方案。
 
 ---
 
