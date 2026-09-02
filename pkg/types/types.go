@@ -207,6 +207,12 @@ type A2AConfig struct {
 	Host      string `yaml:"host"`       // A2A 服务监听地址，默认 0.0.0.0
 	Port      int    `yaml:"port"`       // A2A 服务端口（0 表示不启动 A2A 服务）
 	PublicURL string `yaml:"public_url"` // 对外可达的基础 URL（用于 AgentCard 的 url 字段），留空则按 host:port 推导
+	// AuthToken 是 A2A JSON-RPC 端点的共享密钥（Bearer Token）。
+	// 调用方需在请求头携带 Authorization: Bearer <token>，服务端做常量时间比较校验。
+	// 留空表示不鉴权（仅建议本地/内网调试使用）。
+	// 生产环境建议通过环境变量 AGENTLY_A2A_AUTH_TOKEN 注入，而非明文写在本文件中；
+	// 若同时配置了环境变量与本字段，环境变量优先生效。
+	AuthToken string `yaml:"auth_token"`
 }
 
 // LogConfig 日志配置

@@ -18,7 +18,9 @@ grpc:
 a2a:
   host: "0.0.0.0"       # A2A 服务监听地址（默认监听所有主机）
   port: 9090            # A2A 服务端口（0 表示不启动 A2A 服务）
-  public_url: ""        # 对外可达基础 URL（用于 AgentCard 的 url 字段），给第三方使用必须配置；留空则按 localhost:port 本机推导（仅限本地/内网直连测试）
+  public_url: "https://***.com/"        # 对外可达基础 URL（用于 AgentCard 的 url 字段），给第三方使用必须配置；留空则按 localhost:port 本机推导（仅限本地/内网直连测试）
+  auth_token: ""        # JSON-RPC 端点的 Bearer Token 共享密钥；留空表示不鉴权（仅建议本地/内网调试）。
+                         # 生产环境建议改用环境变量 AGENTLY_A2A_AUTH_TOKEN 注入（优先级高于本字段），避免明文写入配置文件
 
 # 数据库配置（PostgreSQL）
 database:

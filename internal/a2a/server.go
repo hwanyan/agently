@@ -56,23 +56,39 @@ func (s *Server) register(mux *http.ServeMux) {
 	if s.cfg.PublicURL == "" {
 		logger.Warning("未配置 a2a.public_url，AgentCard 将使用本机推导地址（%s），仅供本地/内网直连测试；给第三方使用请配置 a2a.public_url", s.publicBaseURL())
 	}
+
+	// 解析鉴权密钥：环境变量 AGENTLY_A2A_AUTH_TOKEN 优先于 config.yaml 的 a2a.auth_token。
+	// 未配置时 JSON-RPC 端点不做任何鉴权，任何人都能直接调用——仅建议本地/内网调试使用。
+	token := resolveAuthToken(s.cfg.AuthToken)
+	authEnabled := token != ""
+	if !authEnabled {
+		logger.Warning("未配置 A2A 鉴权密钥（环境变量 %s 或 config.yaml 的 a2a.auth_token），"+
+			"JSON-RPC 端点不做鉴权，任何人都可直接调用；给第三方/公网使用前务必配置", authTokenEnvVar)
+	}
+
 	for _, info := range s.manager.List() { // List() 已过滤系统 Agent，仅暴露业务 Agent
 		agentID := info.ID
 
-		// JSON-RPC 端点
+		// JSON-RPC 端点：仅当配置了鉴权密钥时才挂载 bearerAuthInterceptor
 		executor := newAgentExecutor(s.manager, agentID)
-		handler := a2asrv.NewHandler(executor)
+		var opts []a2asrv.RequestHandlerOption
+		if authEnabled {
+			opts = append(opts, a2asrv.WithCallInterceptors(newBearerAuthInterceptor(token)))
+		}
+		handler := a2asrv.NewHandler(executor, opts...)
 		mux.Handle(fmt.Sprintf("/a2a/%s", agentID), a2asrv.NewJSONRPCHandler(handler))
 
-		// AgentCard 端点
+		// AgentCard 端点：AgentCard 本身按 A2A 惯例保持公开可读（供发现），不做鉴权；
+		// 但当 JSON-RPC 端点启用了鉴权时，需要在 Card 里如实声明 securitySchemes，
+		// 让客户端在真正调用前就知道要带 Bearer token。
 		endpointURL := fmt.Sprintf("%s/a2a/%s", s.publicBaseURL(), agentID)
-		card := buildAgentCard(info, endpointURL)
+		card := buildAgentCard(info, endpointURL, authEnabled)
 		mux.Handle(
 			fmt.Sprintf("/a2a/%s/.well-known/agent-card.json", agentID),
 			a2asrv.NewStaticAgentCardHandler(card),
 		)
 
-		logger.Info("A2A 已暴露业务 Agent [%s]：%s", agentID, endpointURL)
+		logger.Info("A2A 已暴露业务 Agent [%s]：%s（鉴权：%t）", agentID, endpointURL, authEnabled)
 	}
 }
 
