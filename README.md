@@ -670,6 +670,8 @@ A2A 服务监听独立端口（`a2a.port`，默认 `9090`），每个业务 Agen
 
 AgentCard 中 `supportedInterfaces[].url` 指向对应 JSON-RPC 端点，其他 Agent 发现卡片后即可直接调用。
 
+> **协议方法名兼容性说明**：SDK（`a2a-go/v2` v2.5.0）内置的 `a2asrv.NewJSONRPCHandler` 默认使用新版驼峰风格方法名（如 `SendMessage`），与 A2A 协议规范文档及绝大多数第三方客户端习惯使用的 `message/send`、`message/stream`、`tasks/get` 等规范风格方法名**不一致**，若直接使用会导致标准调用返回 `-32601 method not found`。因此 `internal/a2a/server.go` 改用 SDK 官方维护的协议兼容层 `a2acompat/a2av0.NewJSONRPCHandler` 来构造 JSON-RPC handler——它内部仍委托给同一个 `a2asrv.Handler`（鉴权拦截器、Executor 逻辑完全不变），仅是把对外暴露的方法名换成了规范风格，因此上表中的 `message/send` 等方法名均可直接使用。
+
 ### 配置
 
 ```yaml
@@ -731,6 +733,7 @@ JSON-RPC 端点采用"TenantID + Token"双因子鉴权模型（而非单一共�
 ### 实现说明与限制
 
 - 桥接层见 `internal/a2a/`：`executor.go` 将 A2A 消息转成文本、调用对应业务 Agent 的 `ProcessMessageStream`，流式产出 `Working` 状态事件 + 增量 `Artifact` 事件（承载回复文本），最终以 `Completed`/`Failed` 终态事件收尾（支持 `message/stream` 流式；回复内容统一在 `task.artifacts` 中，不再重复写入 `task.history` 的 Message）。
+- **协议方法名兼容层**：`server.go` 使用 `a2acompat/a2av0.NewJSONRPCHandler`（而非 SDK 默认的 `a2asrv.NewJSONRPCHandler`）构造 JSON-RPC handler，使对外方法名与 A2A 协议规范文档保持一致（`message/send` 而非 `SendMessage`，详见上方"端点约定"小节）；该兼容层引入了额外的间接依赖 `github.com/a2aproject/a2a-go`（legacy v0 包，随 `go mod tidy` 自动拉取）。
 - **会话隔离**：业务 Agent 的对话历史（`BasicAgent.history`）为实例级共享，与现有 gRPC 对话层行为一致；A2A 层的多会话/多客户端并发会共享同一份历史并受 `streamDone` 串行化。如需按 A2A `contextId` 严格隔离多会话，需后续为每个上下文维护独立的 Agent 实例或历史。
 - **鉴权粒度**：当前是"某个租户能访问全部业务 Agent"，不支持"某租户只能访问部分 Agent"这类按 Agent 维度的精细化授权，也没有在线的凭证签发/吊销接口（改配置需重启生效）。如需更细粒度的访问控制或凭证生命周期管理，需扩展为 OAuth2/mTLS 等方案。
 
@@ -934,6 +937,7 @@ llm:
 | `google.golang.org/protobuf` | Protobuf 运行时与 JSON 编解码（protojson） |
 | `github.com/grpc-ecosystem/grpc-gateway/v2` | grpc-gateway：REST/SSE ↔ gRPC 反向代理 |
 | `github.com/a2aproject/a2a-go/v2` | A2A（Agent2Agent）协议 Go SDK：暴露业务 Agent 为可互操作端点 |
+| `github.com/a2aproject/a2a-go`（legacy，间接依赖） | `a2a-go/v2` 的 `a2acompat/a2av0` 协议兼容层依赖，用于让 JSON-RPC 方法名与规范文档（`message/send` 等）保持一致 |
 | `github.com/skip2/go-qrcode` | 二维码生成 |
 | `github.com/golang-jwt/jwt/v5` | JWT 签发与验证 |
 | `github.com/lib/pq` | PostgreSQL 驱动 |

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
 	"github.com/hwanyan/agently/internal/agent"
@@ -88,7 +89,14 @@ func (s *Server) register(mux *http.ServeMux) {
 			opts = append(opts, a2asrv.WithCallInterceptors(newTenantAuthInterceptor(s.tenants)))
 		}
 		handler := a2asrv.NewHandler(executor, opts...)
-		mux.Handle(fmt.Sprintf("/a2a/%s", agentID), a2asrv.NewJSONRPCHandler(handler))
+		// 使用 a2acompat/a2av0 的 JSON-RPC handler（而非 a2asrv.NewJSONRPCHandler），
+		// 因为该 SDK 的 a2asrv.NewJSONRPCHandler 内部使用的方法名是新版驼峰风格
+		// （如 "SendMessage"），与 A2A 协议规范文档及绝大多数第三方客户端使用的
+		// "message/send" 风格不一致，会导致标准调用报 -32601 method not found。
+		// a2av0 是 SDK 官方维护的协议兼容层，认的是 "message/send"/"message/stream" 等
+		// 规范风格方法名，内部仍然委托给同一个 handler（含鉴权拦截器），行为完全等价，
+		// 仅方法名映射不同。
+		mux.Handle(fmt.Sprintf("/a2a/%s", agentID), a2av0.NewJSONRPCHandler(handler))
 
 		// AgentCard 端点：AgentCard 本身按 A2A 惯例保持公开可读（供发现），不做鉴权；
 		// 但当 JSON-RPC 端点启用了鉴权时，需要在 Card 里如实声明 securitySchemes，
