@@ -26,8 +26,19 @@ import (
 // 执行流程：
 //  1. 从 A2A Message 中提取用户文本；
 //  2. 从 agent.Manager 取出目标业务 Agent；
-//  3. 先下发 Working 状态事件，再以流式方式调用 Agent，把文本增量以 Artifact 事件实时透出；
+//  3. 先创建 Task（TaskStateSubmitted）、再下发 Working 状态事件，然后以流式方式调用 Agent，
+//     把文本增量以 Artifact 事件实时透出；
 //  4. 最终下发 Completed 终态事件结束任务（回复文本已由 Artifact 承载，不再重复产出 Message）。
+//
+// 为什么必须先创建 Task：
+// SDK 内部的任务状态管理器（github.com/a2aproject/a2a-go/v2 的
+// internal/taskupdate.Manager.Process）规定，一次执行产出的第一个事件必须是 *a2a.Task
+// 或 *a2a.Message，否则会以 InvalidAgentResponseError（JSON-RPC code=-32006）拒绝，
+// 报错形如 "processor error: execution failed before a task was created: first event
+// must be a Task or a message: invalid agent response"。因此任何需要下发
+// TaskStatusUpdateEvent/TaskArtifactUpdateEvent 的执行路径，都必须先 yield 一个
+// a2a.NewSubmittedTask(...) 作为第一个事件（简单一次性回复、不需要走 Task 生命周期的场景，
+// 例如下面"空消息"/"Agent 不存在"分支，可以直接 yield 一个裸 Message 并结束，不受此约束）。
 //
 // 为什么回复文本只用 Artifact、不再额外产出 Message：
 // A2A 协议中 Agent 的文本输出可落在两个通道——Artifact（写入 task.artifacts，语义是"任务产物"，
@@ -60,6 +71,17 @@ func newAgentExecutor(mgr *agent.Manager, agentID string) a2asrv.AgentExecutor {
 			// 未经过鉴权拦截器时，ec.User 仍非 nil 但 Authenticated=false，统一记为 "anonymous"。
 			caller := callerName(ec)
 			logger.Info("A2A 请求：租户 [%s]，Agent [%s]，TaskID [%s]，消息：%s", caller, agentID, ec.TaskID, text)
+
+			// 必须先创建 Task，再发送后续的状态/产物更新事件：SDK 的任务状态管理器
+			// （internal/taskupdate.Manager.Process）要求一次执行的第一个事件必须是
+			// *a2a.Task 或 *a2a.Message，否则会以 InvalidAgentResponseError(-32006)
+			// 拒绝——错误信息形如 "processor error: execution failed before a task was
+			// created: first event must be a Task or a message: invalid agent response"。
+			// 此前这里直接发送 TaskStatusUpdateEvent 作为首个事件，不满足该约束，
+			// 导致所有走本分支（正常处理路径）的请求必现此错误。
+			if !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
+				return
+			}
 
 			// 通知客户端任务进入执行中（非终态，后续事件继续被消费）
 			// 这里通过 yield 发送一个“任务执行中”的状态事件。如果 yield 返回 false，
@@ -121,9 +143,15 @@ func newAgentExecutor(mgr *agent.Manager, agentID string) a2asrv.AgentExecutor {
 				return
 			}
 
-			// 无任何文本产出时兜底，避免任务"空转"结束
+			// 无任何文本产出时兜底，避免任务"空转"结束。
+			// 注意：此时 Task 已经创建（mgr.lastStored 非空），不能再像顶部两个早退分支那样
+			// 直接 yield 一个裸 Message——SDK 的任务状态管理器规定"消息事件不允许出现在
+			// Task 已落库之后"（会报 "message not allowed after task was stored"），
+			// 因此这里必须和上下两个分支保持一致，用 StatusUpdateEvent 收尾，
+			// 把提示文本放进其 Status.Message 字段。
 			if full.Len() == 0 {
-				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("（未产生文本回复）")), nil)
+				yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted,
+					a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("（未产生文本回复）"))), nil)
 				return
 			}
 
