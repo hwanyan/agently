@@ -129,9 +129,17 @@ func newAgentExecutor(mgr *agent.Manager, agentID string) a2asrv.AgentExecutor {
 					// 致命错误（如 LLM 调用失败）：记录错误信息，循环结束后以失败终态收尾，
 					// 而不是把错误文本当作正常回复写入 Artifact。
 					fatalErr = ev.Error
-				default:
-					// tool_call / tool_result / tool_error 属于过程事件，不计入最终回复；
-					// 如需要在流式过程透出工具调用，可在此扩展为额外的 Artifact 事件。
+				case types.StreamEventToolCall, types.StreamEventToolResult, types.StreamEventToolError:
+					// 工具调用属于过程事件，不计入最终回复文本。这里把它作为一个"不带消息的 Working
+					// 状态更新"透出，调用过程信息放在事件的 metadata 扩展字段里（键名见
+					// toolEventMetaKey）：状态更新里没有 message/文本，因此不会混进回复正文；
+					// 不认识该扩展的 A2A 客户端会直接忽略 metadata，兼容性不受影响。
+					// Working 属于非终态，SDK 允许在 Completed 之前重复下发。
+					toolEv := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateWorking, nil)
+					toolEv.Metadata = toolEventMetadata(ev)
+					if !yield(toolEv, nil) {
+						return
+					}
 				}
 			}
 
@@ -161,6 +169,28 @@ func newAgentExecutor(mgr *agent.Manager, agentID string) a2asrv.AgentExecutor {
 			yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil), nil)
 		}
 	})
+}
+
+// toolEventMetaKey 是工具调用过程事件在 A2A 状态更新事件 metadata 中使用的扩展键。
+// 取值是一个对象：{"phase": "start"|"success"|"error", "name": 工具名, "arguments": 入参 JSON 字符串}。
+// 调用方（如 agenteam 的 internal/a2a 客户端）按同一约定解析，用于在界面上展示"调用了哪个工具"。
+// 只透出工具名与入参，不透出工具执行结果（结果可能很大，也可能含敏感数据，且界面不需要）。
+const toolEventMetaKey = "toolEvent"
+
+// toolEventMetadata 把一个工具调用过程事件转换为 A2A 事件 metadata。
+func toolEventMetadata(ev types.StreamEvent) map[string]any {
+	phase := "start"
+	switch ev.Type {
+	case types.StreamEventToolResult:
+		phase = "success"
+	case types.StreamEventToolError:
+		phase = "error"
+	}
+	payload := map[string]any{"phase": phase, "name": ev.ToolName}
+	if ev.Type == types.StreamEventToolCall && ev.ToolArgs != "" {
+		payload["arguments"] = ev.ToolArgs
+	}
+	return map[string]any{toolEventMetaKey: payload}
 }
 
 // callerName 从 ExecutorContext.User 中提取调用方标识（tenant_id），用于审计日志。
