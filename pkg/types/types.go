@@ -236,16 +236,15 @@ type LogConfig struct {
 
 // Config 应用程序总配置
 type Config struct {
-	Log      LogConfig      `yaml:"log"`      // 日志配置
-	HTTP     HTTPConfig     `yaml:"http"`     // HTTP服务配置（grpc-gateway 网关）
-	GRPC     GRPCConfig     `yaml:"grpc"`     // gRPC服务配置
-	A2A      A2AConfig      `yaml:"a2a"`      // A2A（Agent-to-Agent）协议服务配置
-	Database DatabaseConfig `yaml:"database"` // 数据库配置
-	JWT      JWTConfig      `yaml:"jwt"`      // JWT 配置
-	SMTP     SMTPConfig     `yaml:"smtp"`     // SMTP 邮件配置
-	LLM      LLMConfig      `yaml:"llm"`      // LLM配置
-	Tools    ToolsConfig    `yaml:"tools"`    // 工具配置
-	MCP      MCPConfig      `yaml:"mcp"`      // MCP工具配置
+	Log         LogConfig         `yaml:"log"`          // 日志配置
+	HTTP        HTTPConfig        `yaml:"http"`         // HTTP服务配置（grpc-gateway 网关）
+	GRPC        GRPCConfig        `yaml:"grpc"`         // gRPC服务配置
+	A2A         A2AConfig         `yaml:"a2a"`          // A2A（Agent-to-Agent）协议服务配置
+	Database    DatabaseConfig    `yaml:"database"`     // 数据库配置
+	AuthService AuthServiceConfig `yaml:"auth_service"` // hwan 认证服务配置（注册/登录/Token 校验）
+	LLM         LLMConfig         `yaml:"llm"`          // LLM配置
+	Tools       ToolsConfig       `yaml:"tools"`        // 工具配置
+	MCP         MCPConfig         `yaml:"mcp"`          // MCP工具配置
 }
 
 // ConfigProvider 配置提供者：返回当前最新生效的配置快照
@@ -323,38 +322,18 @@ type DatabaseConfig struct {
 	ConnMaxLifetime int    `yaml:"conn_max_lifetime"` // 连接最大存活时间（秒），默认 300
 }
 
-// JWTConfig JWT 配置
-type JWTConfig struct {
-	Secret     string `yaml:"secret"`      // JWT 签名密钥，生产环境必须设置强随机值
-	ExpireHour int    `yaml:"expire_hour"` // Token 有效期（小时），默认 72
-}
-
-// SMTPConfig 邮件发送配置
-type SMTPConfig struct {
-	Host     string `yaml:"host"`     // SMTP 服务器地址，如 smtp.qq.com
-	Port     int    `yaml:"port"`     // SMTP 端口，如 587（TLS）或 465（SSL）
-	Username string `yaml:"username"` // SMTP 登录用户名（通常是邮箱地址）
-	Password string `yaml:"password"` // SMTP 登录密码或授权码
-	From     string `yaml:"from"`     // 发件人地址（可选，默认使用 Username）
+// AuthServiceConfig hwan 认证服务（AuthService）的接入配置
+//
+// 用户系统（注册 / 登录 / 邮箱验证码 / JWT 签发与校验）已从 agently 抽离到 hwan 统一提供，
+// agently 不再持有 JWT 密钥与 SMTP 配置，只需知道认证服务的 gRPC 地址和自己的调用方凭证。
+type AuthServiceConfig struct {
+	Addr  string `yaml:"addr"`  // hwan 认证服务 gRPC 地址，如 "127.0.0.1:50054"
+	Token string `yaml:"token"` // 调用方凭证，对应认证服务 server.services 里 name 为 agently 那一项的 token（不要提交到仓库）
 }
 
 // ============================================================
-// 用户与会话领域模型
+// 会话领域模型（用户模型由 hwan 认证服务维护）
 // ============================================================
-
-// User 用户模型（对应 users 表）
-type User struct {
-	ID        string     `json:"id"`         // 用户ID
-	Username  string     `json:"username"`   // 用户名
-	Email     string     `json:"email"`      // 邮箱
-	Password  string     `json:"-"`          // 不序列化到 JSON
-	Nickname  string     `json:"nickname"`   // 昵称（非必须）
-	AvatarURL string     `json:"avatar_url"` // 头像 URL（可选）
-	Status    int        `json:"status"`     // 1=正常, 0=禁用
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	LastLogin *time.Time `json:"last_login"`
-}
 
 // Session 会话模型（对应 sessions 表）
 type Session struct {

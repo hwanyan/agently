@@ -6,7 +6,10 @@
 // 独立测试，也便于未来新增更多横切中间件（如限流、审计日志）时统一收拢在此。
 package middleware
 
-import "context"
+import (
+	"context"
+	"slices"
+)
 
 // ctxKey 上下文键类型，避免与其他包的键冲突
 type ctxKey string
@@ -14,12 +17,14 @@ type ctxKey string
 const (
 	ctxKeyUserID   ctxKey = "user_id"
 	ctxKeyUsername ctxKey = "username"
+	ctxKeyRoles    ctxKey = "roles"
 )
 
 // withUser 将用户信息注入 context（由鉴权拦截器调用）
-func withUser(ctx context.Context, userID, username string) context.Context {
+func withUser(ctx context.Context, userID, username string, roles []string) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyUserID, userID)
 	ctx = context.WithValue(ctx, ctxKeyUsername, username)
+	ctx = context.WithValue(ctx, ctxKeyRoles, roles)
 	return ctx
 }
 
@@ -41,4 +46,17 @@ func UsernameFromContext(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+
+// RolesFromContext 从 context 中读取平台级角色（user / admin）
+func RolesFromContext(ctx context.Context) []string {
+	if v, ok := ctx.Value(ctxKeyRoles).([]string); ok {
+		return v
+	}
+	return nil
+}
+
+// HasRole 当前请求的用户是否拥有指定的平台级角色
+func HasRole(ctx context.Context, role string) bool {
+	return slices.Contains(RolesFromContext(ctx), role)
 }

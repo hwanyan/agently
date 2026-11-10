@@ -10,7 +10,7 @@ import (
 	"github.com/hwanyan/agently/internal/a2a"
 	"github.com/hwanyan/agently/internal/agent"
 	"github.com/hwanyan/agently/internal/agents"
-	"github.com/hwanyan/agently/internal/auth"
+	"github.com/hwanyan/agently/internal/authclient"
 	"github.com/hwanyan/agently/internal/config"
 	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/server"
@@ -40,14 +40,15 @@ func main() {
 	db := initDatabase(cm.Get)
 	defer db.Close()
 
-	// 初始化认证服务、会话存储与消息存储
-	authSvc, sessionStore, messageStore := initServices(cm.Get, db)
+	// 初始化认证服务客户端（用户系统由 hwan 统一提供）、会话存储与消息存储
+	users, sessionStore, messageStore := initServices(cm.Get, db)
+	defer users.Close()
 
 	// 启动 A2A（Agent-to-Agent）服务，把业务 Agent 通过 A2A 协议对外暴露
 	startA2AServer(cm.Get, agentManager)
 
 	// 启动 gRPC 服务与 HTTP 网关
-	startServer(cm.Get, agentManager, authSvc, sessionStore, messageStore)
+	startServer(cm.Get, agentManager, users, sessionStore, messageStore)
 }
 
 // initConfigManager 创建配置管理器并启动热更新监听（watch 模式）
@@ -128,25 +129,24 @@ func initDatabase(provider types.ConfigProvider) (db *store.DB) {
 }
 
 // initServices 初始化相关服务
-func initServices(provider types.ConfigProvider, db *store.DB) (authSvc *auth.Service,
+//
+// 用户系统（注册 / 登录 / 邮箱验证码 / Token 校验）由 hwan 的 auth 服务提供，
+// 这里只创建它的 gRPC 客户端；agently 本地仅保留会话与消息存储。
+func initServices(provider types.ConfigProvider, db *store.DB) (users *authclient.Client,
 	sessionStore *store.SessionStore, messageStore *store.MessageStore) {
 	cfg := provider()
-	if cfg.SMTP.Host == "" {
-		logger.Error("SMTP 未配置，邮箱验证服务无法启动，请在配置文件中填写 SMTP 配置")
-		log.Fatalf("SMTP 未配置，邮箱验证服务无法启动，请在配置文件中填写 SMTP 配置")
-	}
 
-	userStore := store.NewUserStore(db)
+	users, err := authclient.New(cfg.AuthService.Addr, cfg.AuthService.Token)
+	if err != nil {
+		logger.Error("初始化认证服务客户端失败: %v", err)
+		log.Fatalf("初始化认证服务客户端失败: %v", err)
+	}
+	logger.Info("认证服务客户端已初始化（hwan auth 服务: %s）", cfg.AuthService.Addr)
+
 	sessionStore = store.NewSessionStore(db)
 	messageStore = store.NewMessageStore(db)
 
-	emailVerifySvc := auth.NewEmailVerifyService(db, cfg.SMTP)
-	logger.Info("邮箱验证服务已启用（SMTP: %s）", cfg.SMTP.Host)
-
-	authSvc = auth.NewService(userStore, cfg.JWT, emailVerifySvc)
-	logger.Info("数据库连接成功，认证服务已初始化")
-
-	return authSvc, sessionStore, messageStore
+	return users, sessionStore, messageStore
 }
 
 // startA2AServer 启动 A2A（Agent-to-Agent）服务，将全部业务 Agent 通过 A2A 协议对外暴露。
@@ -171,13 +171,13 @@ func startA2AServer(provider types.ConfigProvider, manager *agent.Manager) {
 func startServer(
 	provider types.ConfigProvider,
 	manager *agent.Manager,
-	authSvc *auth.Service,
+	users *authclient.Client,
 	sessionStore *store.SessionStore,
 	messageStore *store.MessageStore,
 ) {
 	srv := server.NewServer(
 		manager,
-		authSvc,
+		users,
 		sessionStore,
 		messageStore,
 		provider,

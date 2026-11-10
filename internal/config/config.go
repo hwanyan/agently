@@ -53,18 +53,12 @@ func validateConfig(config *types.Config) error {
 		return fmt.Errorf("LLM模型不能为空")
 	}
 
-	// 验证 SMTP 配置（必配项）
-	if config.SMTP.Host == "" {
-		return fmt.Errorf("SMTP 服务器地址（smtp.host）不能为空")
+	// 验证 hwan 认证服务接入配置（必配项）
+	if config.AuthService.Addr == "" {
+		return fmt.Errorf("hwan 认证服务地址（auth_service.addr）不能为空")
 	}
-	if config.SMTP.Port <= 0 || config.SMTP.Port > 65535 {
-		return fmt.Errorf("SMTP 端口（smtp.port）无效，应为 1-65535 之间的整数")
-	}
-	if config.SMTP.Username == "" {
-		return fmt.Errorf("SMTP 用户名（smtp.username）不能为空")
-	}
-	if config.SMTP.Password == "" {
-		return fmt.Errorf("SMTP 密码/授权码（smtp.password）不能为空")
+	if config.AuthService.Token == "" {
+		return fmt.Errorf("hwan 认证服务调用方凭证（auth_service.token）不能为空")
 	}
 
 	// 验证天气工具配置

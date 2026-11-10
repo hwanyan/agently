@@ -35,18 +35,10 @@ database:
   max_idle_conns: 5
   conn_max_lifetime: 300
 
-# JWT 认证配置
-jwt:
-  secret: "*******"    # TODO: 请填写 JWT 签名密钥（生产环境必须设置强随机值）
-  expire_hour: 72
-
-# SMTP 邮件配置（用于发送验证码）
-smtp:
-  host: ""             # SMTP 服务器地址，如 smtp.qq.com（留空则验证码打印到控制台）
-  port: 587            # SMTP 端口，587(TLS) 或 465(SSL)
-  username: ""         # SMTP 登录用户名（通常是邮箱地址）
-  password: ""         # SMTP 登录密码或授权码
-  from: ""             # 发件人地址（可选，默认使用 username）
+# hwan 认证服务
+auth_service:
+  addr: "127.0.0.1:50054"   # hwan app/auth 的 gRPC 地址（建议仅内网可达）
+  token: "change_me_agently_service_token"   # 调用方凭证，须与 hwan auth 的 server.services 里 name 为 agently 那一项的 token 一致
 
 # LLM 大语言模型配置
 llm:

@@ -808,8 +808,10 @@ func (x *LoginRequest) GetPassword() string {
 type AuthResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
-	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"` // Access Token（短寿命 JWT），以 Authorization: Bearer 携带
 	User          *User                  `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	RefreshToken  string                 `protobuf:"bytes,4,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"` // Refresh Token，仅用于调用 Refresh；每次刷新都会轮换
+	ExpiresIn     int64                  `protobuf:"varint,5,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`         // Access Token 有效期（秒）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -865,6 +867,154 @@ func (x *AuthResponse) GetUser() *User {
 	return nil
 }
 
+func (x *AuthResponse) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+func (x *AuthResponse) GetExpiresIn() int64 {
+	if x != nil {
+		return x.ExpiresIn
+	}
+	return 0
+}
+
+// RefreshRequest 用 Refresh Token 换取新的 Access Token（公开接口：此时 Access Token 通常已过期）
+type RefreshRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshRequest) Reset() {
+	*x = RefreshRequest{}
+	mi := &file_agently_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshRequest) ProtoMessage() {}
+
+func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agently_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshRequest.ProtoReflect.Descriptor instead.
+func (*RefreshRequest) Descriptor() ([]byte, []int) {
+	return file_agently_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RefreshRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+// LogoutRequest 登出请求：无参数，要吊销的 Token 取自请求头 Authorization: Bearer <token>
+type LogoutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutRequest) Reset() {
+	*x = LogoutRequest{}
+	mi := &file_agently_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutRequest) ProtoMessage() {}
+
+func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agently_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
+func (*LogoutRequest) Descriptor() ([]byte, []int) {
+	return file_agently_proto_rawDescGZIP(), []int{12}
+}
+
+type LogoutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutResponse) Reset() {
+	*x = LogoutResponse{}
+	mi := &file_agently_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutResponse) ProtoMessage() {}
+
+func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agently_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
+func (*LogoutResponse) Descriptor() ([]byte, []int) {
+	return file_agently_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *LogoutResponse) GetCode() int32 {
+	if x != nil {
+		return x.Code
+	}
+	return 0
+}
+
+func (x *LogoutResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 type ListAgentsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -873,7 +1023,7 @@ type ListAgentsRequest struct {
 
 func (x *ListAgentsRequest) Reset() {
 	*x = ListAgentsRequest{}
-	mi := &file_agently_proto_msgTypes[11]
+	mi := &file_agently_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -885,7 +1035,7 @@ func (x *ListAgentsRequest) String() string {
 func (*ListAgentsRequest) ProtoMessage() {}
 
 func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[11]
+	mi := &file_agently_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -898,7 +1048,7 @@ func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentsRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{11}
+	return file_agently_proto_rawDescGZIP(), []int{14}
 }
 
 type ListAgentsResponse struct {
@@ -911,7 +1061,7 @@ type ListAgentsResponse struct {
 
 func (x *ListAgentsResponse) Reset() {
 	*x = ListAgentsResponse{}
-	mi := &file_agently_proto_msgTypes[12]
+	mi := &file_agently_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -923,7 +1073,7 @@ func (x *ListAgentsResponse) String() string {
 func (*ListAgentsResponse) ProtoMessage() {}
 
 func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[12]
+	mi := &file_agently_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -936,7 +1086,7 @@ func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentsResponse) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{12}
+	return file_agently_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListAgentsResponse) GetCode() int32 {
@@ -961,7 +1111,7 @@ type ListToolsRequest struct {
 
 func (x *ListToolsRequest) Reset() {
 	*x = ListToolsRequest{}
-	mi := &file_agently_proto_msgTypes[13]
+	mi := &file_agently_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -973,7 +1123,7 @@ func (x *ListToolsRequest) String() string {
 func (*ListToolsRequest) ProtoMessage() {}
 
 func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[13]
+	mi := &file_agently_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -986,7 +1136,7 @@ func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListToolsRequest.ProtoReflect.Descriptor instead.
 func (*ListToolsRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{13}
+	return file_agently_proto_rawDescGZIP(), []int{16}
 }
 
 type ListToolsResponse struct {
@@ -999,7 +1149,7 @@ type ListToolsResponse struct {
 
 func (x *ListToolsResponse) Reset() {
 	*x = ListToolsResponse{}
-	mi := &file_agently_proto_msgTypes[14]
+	mi := &file_agently_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1011,7 +1161,7 @@ func (x *ListToolsResponse) String() string {
 func (*ListToolsResponse) ProtoMessage() {}
 
 func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[14]
+	mi := &file_agently_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1024,7 +1174,7 @@ func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListToolsResponse.ProtoReflect.Descriptor instead.
 func (*ListToolsResponse) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{14}
+	return file_agently_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListToolsResponse) GetCode() int32 {
@@ -1050,7 +1200,7 @@ type SwitchAgentRequest struct {
 
 func (x *SwitchAgentRequest) Reset() {
 	*x = SwitchAgentRequest{}
-	mi := &file_agently_proto_msgTypes[15]
+	mi := &file_agently_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1062,7 +1212,7 @@ func (x *SwitchAgentRequest) String() string {
 func (*SwitchAgentRequest) ProtoMessage() {}
 
 func (x *SwitchAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[15]
+	mi := &file_agently_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1075,7 +1225,7 @@ func (x *SwitchAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwitchAgentRequest.ProtoReflect.Descriptor instead.
 func (*SwitchAgentRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{15}
+	return file_agently_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SwitchAgentRequest) GetAgentId() string {
@@ -1096,7 +1246,7 @@ type SwitchAgentResponse struct {
 
 func (x *SwitchAgentResponse) Reset() {
 	*x = SwitchAgentResponse{}
-	mi := &file_agently_proto_msgTypes[16]
+	mi := &file_agently_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1108,7 +1258,7 @@ func (x *SwitchAgentResponse) String() string {
 func (*SwitchAgentResponse) ProtoMessage() {}
 
 func (x *SwitchAgentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[16]
+	mi := &file_agently_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1121,7 +1271,7 @@ func (x *SwitchAgentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwitchAgentResponse.ProtoReflect.Descriptor instead.
 func (*SwitchAgentResponse) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{16}
+	return file_agently_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SwitchAgentResponse) GetCode() int32 {
@@ -1156,7 +1306,7 @@ type ListSessionsRequest struct {
 
 func (x *ListSessionsRequest) Reset() {
 	*x = ListSessionsRequest{}
-	mi := &file_agently_proto_msgTypes[17]
+	mi := &file_agently_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1168,7 +1318,7 @@ func (x *ListSessionsRequest) String() string {
 func (*ListSessionsRequest) ProtoMessage() {}
 
 func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[17]
+	mi := &file_agently_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1181,7 +1331,7 @@ func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{17}
+	return file_agently_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListSessionsRequest) GetAgentId() string {
@@ -1215,7 +1365,7 @@ type ListSessionsResponse struct {
 
 func (x *ListSessionsResponse) Reset() {
 	*x = ListSessionsResponse{}
-	mi := &file_agently_proto_msgTypes[18]
+	mi := &file_agently_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1227,7 +1377,7 @@ func (x *ListSessionsResponse) String() string {
 func (*ListSessionsResponse) ProtoMessage() {}
 
 func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[18]
+	mi := &file_agently_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1240,7 +1390,7 @@ func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{18}
+	return file_agently_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListSessionsResponse) GetCode() int32 {
@@ -1267,7 +1417,7 @@ type CreateSessionRequest struct {
 
 func (x *CreateSessionRequest) Reset() {
 	*x = CreateSessionRequest{}
-	mi := &file_agently_proto_msgTypes[19]
+	mi := &file_agently_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1279,7 +1429,7 @@ func (x *CreateSessionRequest) String() string {
 func (*CreateSessionRequest) ProtoMessage() {}
 
 func (x *CreateSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[19]
+	mi := &file_agently_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1292,7 +1442,7 @@ func (x *CreateSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSessionRequest.ProtoReflect.Descriptor instead.
 func (*CreateSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{19}
+	return file_agently_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *CreateSessionRequest) GetAgentId() string {
@@ -1319,7 +1469,7 @@ type CreateSessionResponse struct {
 
 func (x *CreateSessionResponse) Reset() {
 	*x = CreateSessionResponse{}
-	mi := &file_agently_proto_msgTypes[20]
+	mi := &file_agently_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1331,7 +1481,7 @@ func (x *CreateSessionResponse) String() string {
 func (*CreateSessionResponse) ProtoMessage() {}
 
 func (x *CreateSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[20]
+	mi := &file_agently_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1344,7 +1494,7 @@ func (x *CreateSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSessionResponse.ProtoReflect.Descriptor instead.
 func (*CreateSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{20}
+	return file_agently_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CreateSessionResponse) GetCode() int32 {
@@ -1372,7 +1522,7 @@ type ListMessagesRequest struct {
 
 func (x *ListMessagesRequest) Reset() {
 	*x = ListMessagesRequest{}
-	mi := &file_agently_proto_msgTypes[21]
+	mi := &file_agently_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1384,7 +1534,7 @@ func (x *ListMessagesRequest) String() string {
 func (*ListMessagesRequest) ProtoMessage() {}
 
 func (x *ListMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[21]
+	mi := &file_agently_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1397,7 +1547,7 @@ func (x *ListMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMessagesRequest.ProtoReflect.Descriptor instead.
 func (*ListMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{21}
+	return file_agently_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListMessagesRequest) GetSessionId() string {
@@ -1431,7 +1581,7 @@ type ListMessagesResponse struct {
 
 func (x *ListMessagesResponse) Reset() {
 	*x = ListMessagesResponse{}
-	mi := &file_agently_proto_msgTypes[22]
+	mi := &file_agently_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1443,7 +1593,7 @@ func (x *ListMessagesResponse) String() string {
 func (*ListMessagesResponse) ProtoMessage() {}
 
 func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[22]
+	mi := &file_agently_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1456,7 +1606,7 @@ func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMessagesResponse.ProtoReflect.Descriptor instead.
 func (*ListMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{22}
+	return file_agently_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListMessagesResponse) GetCode() int32 {
@@ -1482,7 +1632,7 @@ type ArchiveSessionRequest struct {
 
 func (x *ArchiveSessionRequest) Reset() {
 	*x = ArchiveSessionRequest{}
-	mi := &file_agently_proto_msgTypes[23]
+	mi := &file_agently_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1494,7 +1644,7 @@ func (x *ArchiveSessionRequest) String() string {
 func (*ArchiveSessionRequest) ProtoMessage() {}
 
 func (x *ArchiveSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[23]
+	mi := &file_agently_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1507,7 +1657,7 @@ func (x *ArchiveSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveSessionRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{23}
+	return file_agently_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ArchiveSessionRequest) GetSessionId() string {
@@ -1527,7 +1677,7 @@ type ArchiveSessionResponse struct {
 
 func (x *ArchiveSessionResponse) Reset() {
 	*x = ArchiveSessionResponse{}
-	mi := &file_agently_proto_msgTypes[24]
+	mi := &file_agently_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1539,7 +1689,7 @@ func (x *ArchiveSessionResponse) String() string {
 func (*ArchiveSessionResponse) ProtoMessage() {}
 
 func (x *ArchiveSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[24]
+	mi := &file_agently_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1552,7 +1702,7 @@ func (x *ArchiveSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveSessionResponse.ProtoReflect.Descriptor instead.
 func (*ArchiveSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{24}
+	return file_agently_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ArchiveSessionResponse) GetCode() int32 {
@@ -1580,7 +1730,7 @@ type ChatRequest struct {
 
 func (x *ChatRequest) Reset() {
 	*x = ChatRequest{}
-	mi := &file_agently_proto_msgTypes[25]
+	mi := &file_agently_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1592,7 +1742,7 @@ func (x *ChatRequest) String() string {
 func (*ChatRequest) ProtoMessage() {}
 
 func (x *ChatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[25]
+	mi := &file_agently_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1605,7 +1755,7 @@ func (x *ChatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatRequest.ProtoReflect.Descriptor instead.
 func (*ChatRequest) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{25}
+	return file_agently_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ChatRequest) GetSessionId() string {
@@ -1647,7 +1797,7 @@ type ChatEvent struct {
 
 func (x *ChatEvent) Reset() {
 	*x = ChatEvent{}
-	mi := &file_agently_proto_msgTypes[26]
+	mi := &file_agently_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1659,7 +1809,7 @@ func (x *ChatEvent) String() string {
 func (*ChatEvent) ProtoMessage() {}
 
 func (x *ChatEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agently_proto_msgTypes[26]
+	mi := &file_agently_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1672,7 +1822,7 @@ func (x *ChatEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatEvent.ProtoReflect.Descriptor instead.
 func (*ChatEvent) Descriptor() ([]byte, []int) {
-	return file_agently_proto_rawDescGZIP(), []int{26}
+	return file_agently_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ChatEvent) GetType() string {
@@ -1834,11 +1984,20 @@ const file_agently_proto_rawDesc = "" +
 	"verifyCode\"F\n" +
 	"\fLoginRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\"^\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"\xa2\x01\n" +
 	"\fAuthResponse\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12$\n" +
-	"\x04user\x18\x03 \x01(\v2\x10.agently.v1.UserR\x04user\"\x13\n" +
+	"\x04user\x18\x03 \x01(\v2\x10.agently.v1.UserR\x04user\x12#\n" +
+	"\rrefresh_token\x18\x04 \x01(\tR\frefreshToken\x12\x1d\n" +
+	"\n" +
+	"expires_in\x18\x05 \x01(\x03R\texpiresIn\"5\n" +
+	"\x0eRefreshRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"\x0f\n" +
+	"\rLogoutRequest\">\n" +
+	"\x0eLogoutResponse\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x13\n" +
 	"\x11ListAgentsRequest\"W\n" +
 	"\x12ListAgentsResponse\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\x12-\n" +
@@ -1897,11 +2056,13 @@ const file_agently_proto_rawDesc = "" +
 	"\ttool_args\x18\x06 \x01(\tR\btoolArgs\x12\x1f\n" +
 	"\vtool_result\x18\a \x01(\tR\n" +
 	"toolResult\x12\x14\n" +
-	"\x05error\x18\b \x01(\tR\x05error2\xcf\x02\n" +
+	"\x05error\x18\b \x01(\tR\x05error2\x92\x04\n" +
 	"\vAuthService\x12\x7f\n" +
 	"\x0eSendVerifyCode\x12!.agently.v1.SendVerifyCodeRequest\x1a\".agently.v1.SendVerifyCodeResponse\"&\x88\xf9+\x01\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/auth:sendVerifyCode\x12c\n" +
 	"\bRegister\x12\x1b.agently.v1.RegisterRequest\x1a\x18.agently.v1.AuthResponse\" \x88\xf9+\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/auth:register\x12Z\n" +
-	"\x05Login\x12\x18.agently.v1.LoginRequest\x1a\x18.agently.v1.AuthResponse\"\x1d\x88\xf9+\x01\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth:login2\xba\x02\n" +
+	"\x05Login\x12\x18.agently.v1.LoginRequest\x1a\x18.agently.v1.AuthResponse\"\x1d\x88\xf9+\x01\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth:login\x12`\n" +
+	"\aRefresh\x12\x1a.agently.v1.RefreshRequest\x1a\x18.agently.v1.AuthResponse\"\x1f\x88\xf9+\x01\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/auth:refresh\x12_\n" +
+	"\x06Logout\x12\x19.agently.v1.LogoutRequest\x1a\x1a.agently.v1.LogoutResponse\"\x1e\x88\xf9+\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/auth:logout2\xba\x02\n" +
 	"\fAgentService\x12_\n" +
 	"\n" +
 	"ListAgents\x12\x1d.agently.v1.ListAgentsRequest\x1a\x1e.agently.v1.ListAgentsResponse\"\x12\x82\xd3\xe4\x93\x02\f\x12\n" +
@@ -1928,7 +2089,7 @@ func file_agently_proto_rawDescGZIP() []byte {
 	return file_agently_proto_rawDescData
 }
 
-var file_agently_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_agently_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_agently_proto_goTypes = []any{
 	(*User)(nil),                       // 0: agently.v1.User
 	(*Session)(nil),                    // 1: agently.v1.Session
@@ -1941,23 +2102,26 @@ var file_agently_proto_goTypes = []any{
 	(*RegisterRequest)(nil),            // 8: agently.v1.RegisterRequest
 	(*LoginRequest)(nil),               // 9: agently.v1.LoginRequest
 	(*AuthResponse)(nil),               // 10: agently.v1.AuthResponse
-	(*ListAgentsRequest)(nil),          // 11: agently.v1.ListAgentsRequest
-	(*ListAgentsResponse)(nil),         // 12: agently.v1.ListAgentsResponse
-	(*ListToolsRequest)(nil),           // 13: agently.v1.ListToolsRequest
-	(*ListToolsResponse)(nil),          // 14: agently.v1.ListToolsResponse
-	(*SwitchAgentRequest)(nil),         // 15: agently.v1.SwitchAgentRequest
-	(*SwitchAgentResponse)(nil),        // 16: agently.v1.SwitchAgentResponse
-	(*ListSessionsRequest)(nil),        // 17: agently.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),       // 18: agently.v1.ListSessionsResponse
-	(*CreateSessionRequest)(nil),       // 19: agently.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),      // 20: agently.v1.CreateSessionResponse
-	(*ListMessagesRequest)(nil),        // 21: agently.v1.ListMessagesRequest
-	(*ListMessagesResponse)(nil),       // 22: agently.v1.ListMessagesResponse
-	(*ArchiveSessionRequest)(nil),      // 23: agently.v1.ArchiveSessionRequest
-	(*ArchiveSessionResponse)(nil),     // 24: agently.v1.ArchiveSessionResponse
-	(*ChatRequest)(nil),                // 25: agently.v1.ChatRequest
-	(*ChatEvent)(nil),                  // 26: agently.v1.ChatEvent
-	(*descriptorpb.MethodOptions)(nil), // 27: google.protobuf.MethodOptions
+	(*RefreshRequest)(nil),             // 11: agently.v1.RefreshRequest
+	(*LogoutRequest)(nil),              // 12: agently.v1.LogoutRequest
+	(*LogoutResponse)(nil),             // 13: agently.v1.LogoutResponse
+	(*ListAgentsRequest)(nil),          // 14: agently.v1.ListAgentsRequest
+	(*ListAgentsResponse)(nil),         // 15: agently.v1.ListAgentsResponse
+	(*ListToolsRequest)(nil),           // 16: agently.v1.ListToolsRequest
+	(*ListToolsResponse)(nil),          // 17: agently.v1.ListToolsResponse
+	(*SwitchAgentRequest)(nil),         // 18: agently.v1.SwitchAgentRequest
+	(*SwitchAgentResponse)(nil),        // 19: agently.v1.SwitchAgentResponse
+	(*ListSessionsRequest)(nil),        // 20: agently.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),       // 21: agently.v1.ListSessionsResponse
+	(*CreateSessionRequest)(nil),       // 22: agently.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),      // 23: agently.v1.CreateSessionResponse
+	(*ListMessagesRequest)(nil),        // 24: agently.v1.ListMessagesRequest
+	(*ListMessagesResponse)(nil),       // 25: agently.v1.ListMessagesResponse
+	(*ArchiveSessionRequest)(nil),      // 26: agently.v1.ArchiveSessionRequest
+	(*ArchiveSessionResponse)(nil),     // 27: agently.v1.ArchiveSessionResponse
+	(*ChatRequest)(nil),                // 28: agently.v1.ChatRequest
+	(*ChatEvent)(nil),                  // 29: agently.v1.ChatEvent
+	(*descriptorpb.MethodOptions)(nil), // 30: google.protobuf.MethodOptions
 }
 var file_agently_proto_depIdxs = []int32{
 	0,  // 0: agently.v1.AuthResponse.user:type_name -> agently.v1.User
@@ -1967,31 +2131,35 @@ var file_agently_proto_depIdxs = []int32{
 	1,  // 4: agently.v1.ListSessionsResponse.sessions:type_name -> agently.v1.Session
 	1,  // 5: agently.v1.CreateSessionResponse.session:type_name -> agently.v1.Session
 	2,  // 6: agently.v1.ListMessagesResponse.messages:type_name -> agently.v1.StoredMessage
-	27, // 7: agently.v1.public:extendee -> google.protobuf.MethodOptions
+	30, // 7: agently.v1.public:extendee -> google.protobuf.MethodOptions
 	6,  // 8: agently.v1.AuthService.SendVerifyCode:input_type -> agently.v1.SendVerifyCodeRequest
 	8,  // 9: agently.v1.AuthService.Register:input_type -> agently.v1.RegisterRequest
 	9,  // 10: agently.v1.AuthService.Login:input_type -> agently.v1.LoginRequest
-	11, // 11: agently.v1.AgentService.ListAgents:input_type -> agently.v1.ListAgentsRequest
-	13, // 12: agently.v1.AgentService.ListTools:input_type -> agently.v1.ListToolsRequest
-	15, // 13: agently.v1.AgentService.SwitchAgent:input_type -> agently.v1.SwitchAgentRequest
-	17, // 14: agently.v1.SessionService.ListSessions:input_type -> agently.v1.ListSessionsRequest
-	19, // 15: agently.v1.SessionService.CreateSession:input_type -> agently.v1.CreateSessionRequest
-	21, // 16: agently.v1.SessionService.ListMessages:input_type -> agently.v1.ListMessagesRequest
-	25, // 17: agently.v1.SessionService.Chat:input_type -> agently.v1.ChatRequest
-	23, // 18: agently.v1.SessionService.ArchiveSession:input_type -> agently.v1.ArchiveSessionRequest
-	7,  // 19: agently.v1.AuthService.SendVerifyCode:output_type -> agently.v1.SendVerifyCodeResponse
-	10, // 20: agently.v1.AuthService.Register:output_type -> agently.v1.AuthResponse
-	10, // 21: agently.v1.AuthService.Login:output_type -> agently.v1.AuthResponse
-	12, // 22: agently.v1.AgentService.ListAgents:output_type -> agently.v1.ListAgentsResponse
-	14, // 23: agently.v1.AgentService.ListTools:output_type -> agently.v1.ListToolsResponse
-	16, // 24: agently.v1.AgentService.SwitchAgent:output_type -> agently.v1.SwitchAgentResponse
-	18, // 25: agently.v1.SessionService.ListSessions:output_type -> agently.v1.ListSessionsResponse
-	20, // 26: agently.v1.SessionService.CreateSession:output_type -> agently.v1.CreateSessionResponse
-	22, // 27: agently.v1.SessionService.ListMessages:output_type -> agently.v1.ListMessagesResponse
-	26, // 28: agently.v1.SessionService.Chat:output_type -> agently.v1.ChatEvent
-	24, // 29: agently.v1.SessionService.ArchiveSession:output_type -> agently.v1.ArchiveSessionResponse
-	19, // [19:30] is the sub-list for method output_type
-	8,  // [8:19] is the sub-list for method input_type
+	11, // 11: agently.v1.AuthService.Refresh:input_type -> agently.v1.RefreshRequest
+	12, // 12: agently.v1.AuthService.Logout:input_type -> agently.v1.LogoutRequest
+	14, // 13: agently.v1.AgentService.ListAgents:input_type -> agently.v1.ListAgentsRequest
+	16, // 14: agently.v1.AgentService.ListTools:input_type -> agently.v1.ListToolsRequest
+	18, // 15: agently.v1.AgentService.SwitchAgent:input_type -> agently.v1.SwitchAgentRequest
+	20, // 16: agently.v1.SessionService.ListSessions:input_type -> agently.v1.ListSessionsRequest
+	22, // 17: agently.v1.SessionService.CreateSession:input_type -> agently.v1.CreateSessionRequest
+	24, // 18: agently.v1.SessionService.ListMessages:input_type -> agently.v1.ListMessagesRequest
+	28, // 19: agently.v1.SessionService.Chat:input_type -> agently.v1.ChatRequest
+	26, // 20: agently.v1.SessionService.ArchiveSession:input_type -> agently.v1.ArchiveSessionRequest
+	7,  // 21: agently.v1.AuthService.SendVerifyCode:output_type -> agently.v1.SendVerifyCodeResponse
+	10, // 22: agently.v1.AuthService.Register:output_type -> agently.v1.AuthResponse
+	10, // 23: agently.v1.AuthService.Login:output_type -> agently.v1.AuthResponse
+	10, // 24: agently.v1.AuthService.Refresh:output_type -> agently.v1.AuthResponse
+	13, // 25: agently.v1.AuthService.Logout:output_type -> agently.v1.LogoutResponse
+	15, // 26: agently.v1.AgentService.ListAgents:output_type -> agently.v1.ListAgentsResponse
+	17, // 27: agently.v1.AgentService.ListTools:output_type -> agently.v1.ListToolsResponse
+	19, // 28: agently.v1.AgentService.SwitchAgent:output_type -> agently.v1.SwitchAgentResponse
+	21, // 29: agently.v1.SessionService.ListSessions:output_type -> agently.v1.ListSessionsResponse
+	23, // 30: agently.v1.SessionService.CreateSession:output_type -> agently.v1.CreateSessionResponse
+	25, // 31: agently.v1.SessionService.ListMessages:output_type -> agently.v1.ListMessagesResponse
+	29, // 32: agently.v1.SessionService.Chat:output_type -> agently.v1.ChatEvent
+	27, // 33: agently.v1.SessionService.ArchiveSession:output_type -> agently.v1.ArchiveSessionResponse
+	21, // [21:34] is the sub-list for method output_type
+	8,  // [8:21] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
 	7,  // [7:8] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -2002,14 +2170,14 @@ func file_agently_proto_init() {
 	if File_agently_proto != nil {
 		return
 	}
-	file_agently_proto_msgTypes[25].OneofWrappers = []any{}
+	file_agently_proto_msgTypes[28].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agently_proto_rawDesc), len(file_agently_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   30,
 			NumExtensions: 1,
 			NumServices:   3,
 		},

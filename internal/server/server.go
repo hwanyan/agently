@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/hwanyan/agently/internal/agent"
-	"github.com/hwanyan/agently/internal/auth"
+	"github.com/hwanyan/agently/internal/authclient"
 	"github.com/hwanyan/agently/internal/logger"
 	"github.com/hwanyan/agently/internal/server/middleware"
 	"github.com/hwanyan/agently/internal/server/rpc"
@@ -45,7 +45,7 @@ import (
 //     （见 sse.go）把 gRPC 流事件转写为与旧版一致的 SSE（event/data）格式。
 type Server struct {
 	manager      *agent.Manager
-	authSvc      *auth.Service
+	users        *authclient.Client
 	sessionStore *store.SessionStore
 	messageStore *store.MessageStore
 	config       *types.Config
@@ -58,14 +58,14 @@ type Server struct {
 // 进程生命周期内监听地址保持一致。provider 由 config.Manager.Get 提供，统一 ConfigProvider 接口。
 func NewServer(
 	manager *agent.Manager,
-	authSvc *auth.Service,
+	users *authclient.Client,
 	sessionStore *store.SessionStore,
 	messageStore *store.MessageStore,
 	provider types.ConfigProvider,
 ) *Server {
 	return &Server{
 		manager:      manager,
-		authSvc:      authSvc,
+		users:        users,
 		sessionStore: sessionStore,
 		messageStore: messageStore,
 		config:       provider(),
@@ -109,9 +109,9 @@ func (s *Server) httpAddr() string {
 // Start 启动 gRPC 服务与 HTTP 网关（阻塞运行）
 func (s *Server) Start() {
 	// 防御性检查：核心依赖必须就绪
-	if s.authSvc == nil || s.sessionStore == nil || s.messageStore == nil {
-		logger.Error("服务启动失败: 关键依赖未初始化（authSvc/sessionStore/messageStore）")
-		log.Fatalf("服务启动失败: 关键依赖未初始化（authSvc/sessionStore/messageStore）")
+	if s.users == nil || s.sessionStore == nil || s.messageStore == nil {
+		logger.Error("服务启动失败: 关键依赖未初始化（users/sessionStore/messageStore）")
+		log.Fatalf("服务启动失败: 关键依赖未初始化（users/sessionStore/messageStore）")
 	}
 
 	// 1. 启动 gRPC 服务
@@ -132,7 +132,7 @@ func (s *Server) startGRPC() {
 	}
 
 	// 声明鉴权拦截器
-	interceptor := middleware.NewAuthInterceptor(s.authSvc)
+	interceptor := middleware.NewAuthInterceptor(s.users)
 	// 创建由 option 配置的 gRPC 服务器
 	grpcServer := grpc.NewServer(
 		// 给所有一元 RPC 装鉴权（可链式扩展更多中间件）
@@ -141,7 +141,7 @@ func (s *Server) startGRPC() {
 		grpc.ChainStreamInterceptor(interceptor.Stream()),
 	)
 
-	agentlypb.RegisterAuthServiceServer(grpcServer, rpc.NewAuthServer(s.authSvc))
+	agentlypb.RegisterAuthServiceServer(grpcServer, rpc.NewAuthServer(s.users))
 	agentlypb.RegisterAgentServiceServer(grpcServer, rpc.NewAgentServer(s.manager))
 	agentlypb.RegisterSessionServiceServer(grpcServer, rpc.NewSessionServer(s.manager, s.sessionStore, s.messageStore))
 

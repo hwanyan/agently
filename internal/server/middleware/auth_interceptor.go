@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/hwanyan/agently/internal/auth"
+	"github.com/hwanyan/agently/internal/authclient"
 	"github.com/hwanyan/agently/internal/logger"
 	agentlypb "github.com/hwanyan/agently/pb/gen"
 
@@ -20,20 +20,21 @@ import (
 
 // AuthInterceptor JWT 鉴权拦截器
 //
-// 取代原先的 HTTP 中间件：从 gRPC metadata 的 authorization 头中提取并验证 Bearer Token，
-// 验证通过后把 user_id/username 注入 context。
+// 取代原先的 HTTP 中间件：从 gRPC metadata 的 authorization 头中提取 Bearer Token，
+// 用认证服务发布的公钥在本地验签（Access Token 为短寿命 JWT），验证通过后把 user_id/username/roles 注入 context。
+// agently 自身不持有任何签名密钥（只有公钥，无法伪造 Token），也不接触用户表。
 //
 // 是否鉴权由「契约即策略」驱动：读取每个方法在 proto 中声明的自定义选项
 // (agently.v1.public)。语义为 default-secure —— 只有显式声明 public=true 的方法才免鉴权，
 // 其余（包括未来新增的方法）一律需要鉴权，避免“新增即公开”的隐患。
 type AuthInterceptor struct {
-	authSvc *auth.Service
+	users *authclient.Client
 	// publicMethods 全方法名 → 是否公开的策略表，启动时由 proto 方法选项构建
 	publicMethods map[string]bool
 }
 
 // NewAuthInterceptor 创建鉴权拦截器，并根据 proto 方法选项构建鉴权策略表
-func NewAuthInterceptor(authSvc *auth.Service) *AuthInterceptor {
+func NewAuthInterceptor(users *authclient.Client) *AuthInterceptor {
 	policy := buildAuthPolicy()
 
 	// 打印公开方法清单，便于启动期审计
@@ -46,7 +47,7 @@ func NewAuthInterceptor(authSvc *auth.Service) *AuthInterceptor {
 	logger.Info("鉴权策略已加载：共 %d 个方法，其中公开（免鉴权）方法 %d 个: %s",
 		len(policy), len(publics), strings.Join(publics, ", "))
 
-	return &AuthInterceptor{authSvc: authSvc, publicMethods: policy}
+	return &AuthInterceptor{users: users, publicMethods: policy}
 }
 
 // buildAuthPolicy 遍历全局 proto 描述符注册表，读取每个方法的 (agently.v1.public) 选项，
@@ -86,32 +87,45 @@ func (a *AuthInterceptor) isPublicMethod(fullMethod string) bool {
 	return a.publicMethods[fullMethod]
 }
 
-// authenticate 校验 metadata 中的 Bearer Token，成功则返回带用户信息的新 context
-func (a *AuthInterceptor) authenticate(ctx context.Context) (context.Context, error) {
+// BearerTokenFromMetadata 从 gRPC metadata 的 authorization 头提取 Bearer Token。
+// 缺失或格式错误时返回带说明的 Unauthenticated 错误。
+func BearerTokenFromMetadata(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "缺少 Authorization 请求头")
+		return "", status.Error(codes.Unauthenticated, "缺少 Authorization 请求头")
 	}
 	vals := md.Get("authorization")
 	if len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
-		return nil, status.Error(codes.Unauthenticated, "缺少 Authorization 请求头")
+		return "", status.Error(codes.Unauthenticated, "缺少 Authorization 请求头")
 	}
 
 	parts := strings.SplitN(vals[0], " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return nil, status.Error(codes.Unauthenticated, "Authorization 格式错误，应为 Bearer <token>")
+		return "", status.Error(codes.Unauthenticated, "Authorization 格式错误，应为 Bearer <token>")
 	}
 	tokenStr := strings.TrimSpace(parts[1])
 	if tokenStr == "" {
-		return nil, status.Error(codes.Unauthenticated, "Token 不能为空")
+		return "", status.Error(codes.Unauthenticated, "Token 不能为空")
 	}
+	return tokenStr, nil
+}
 
-	claims, err := a.authSvc.VerifyToken(tokenStr)
+// authenticate 本地校验 metadata 中的 Access Token，成功则返回带用户信息的新 context。
+// 校验在本进程内完成（公钥取自认证服务并缓存），不回源认证服务、不查库。
+func (a *AuthInterceptor) authenticate(ctx context.Context) (context.Context, error) {
+	tokenStr, err := BearerTokenFromMetadata(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "Token 无效或已过期")
+		return nil, err
 	}
 
-	return withUser(ctx, claims.UserID, claims.Username), nil
+	// Unauthenticated（Token 无效/过期，客户端应 Refresh）与 Unavailable（取不到公钥）原样透传，
+	// 这样认证服务抖动时客户端拿到的是 503 而不是 401，不会被误踢下线。
+	identity, err := a.users.VerifyToken(ctx, tokenStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return withUser(ctx, identity.UserID, identity.Username, identity.Roles), nil
 }
 
 // Unary 一元 RPC 鉴权拦截器

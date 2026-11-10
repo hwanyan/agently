@@ -109,6 +109,72 @@
         ]
       }
     },
+    "/v1/auth:logout": {
+      "post": {
+        "summary": "Logout 登出：吊销当前登录链路（其 Refresh Token 全部失效）。\n标 public：Access Token 过期后用户仍应能退出登录；身份由请求头里的 Token 签名证明（过期也接受），服务端据此吊销。",
+        "operationId": "AuthService_Logout",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LogoutResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LogoutRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth:refresh": {
+      "post": {
+        "summary": "Refresh 用 Refresh Token 换取新的 Access Token（并轮换 Refresh Token）。\n标 public：调用它时 Access Token 通常已经过期，身份由 Refresh Token 本身证明。",
+        "operationId": "AuthService_Refresh",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AuthResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RefreshRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
     "/v1/auth:register": {
       "post": {
         "operationId": "AuthService_Register",
@@ -502,10 +568,20 @@
           "format": "int32"
         },
         "token": {
-          "type": "string"
+          "type": "string",
+          "title": "Access Token（短寿命 JWT），以 Authorization: Bearer 携带"
         },
         "user": {
           "$ref": "#/definitions/v1User"
+        },
+        "refresh_token": {
+          "type": "string",
+          "title": "Refresh Token，仅用于调用 Refresh；每次刷新都会轮换"
+        },
+        "expires_in": {
+          "type": "string",
+          "format": "int64",
+          "title": "Access Token 有效期（秒）"
         }
       }
     },
@@ -644,6 +720,31 @@
           "type": "string"
         }
       }
+    },
+    "v1LogoutRequest": {
+      "type": "object",
+      "title": "LogoutRequest 登出请求：无参数，要吊销的 Token 取自请求头 Authorization: Bearer \u003ctoken\u003e"
+    },
+    "v1LogoutResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RefreshRequest": {
+      "type": "object",
+      "properties": {
+        "refresh_token": {
+          "type": "string"
+        }
+      },
+      "title": "RefreshRequest 用 Refresh Token 换取新的 Access Token（公开接口：此时 Access Token 通常已过期）"
     },
     "v1RegisterRequest": {
       "type": "object",

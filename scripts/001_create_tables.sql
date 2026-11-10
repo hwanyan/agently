@@ -11,32 +11,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================================
--- 1. 用户表 (users)
--- 存储注册用户的基本信息与认证凭据
+-- 说明：用户系统（users / email_verifications）已抽离到 hwan 认证服务（独立库 authdb），
+-- 本库不再包含这两张表。下列表中的 user_id 仅是对 hwan 认证服务中用户 ID（UUID）的逻辑引用，
+-- 不再建立外键；用户是否存在由请求入口的 Token 校验（hwan AuthService.VerifyToken）保证。
 -- ============================================================
-CREATE TABLE IF NOT EXISTS users (
-    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    username    VARCHAR(64) NOT NULL UNIQUE,                  -- 用户名，唯一
-    email       VARCHAR(255) NOT NULL UNIQUE,                 -- 邮箱，唯一
-    password    VARCHAR(255) NOT NULL,                        -- bcrypt 哈希后的密码
-    nickname    VARCHAR(128),                                 -- 昵称（可选）
-    avatar_url  TEXT,                                         -- 头像 URL（可选）
-    status      SMALLINT    NOT NULL DEFAULT 1,               -- 状态: 1=正常, 0=禁用
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_login  TIMESTAMPTZ                                   -- 最后登录时间
-);
-
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_status   ON users(status);
-
-COMMENT ON TABLE  users              IS '用户表';
-COMMENT ON COLUMN users.id           IS '用户唯一ID (UUID)';
-COMMENT ON COLUMN users.username     IS '用户名，登录凭据之一，全局唯一';
-COMMENT ON COLUMN users.email        IS '邮箱，登录凭据之一，全局唯一';
-COMMENT ON COLUMN users.password     IS 'bcrypt 哈希后的密码，不存储明文';
-COMMENT ON COLUMN users.status       IS '账号状态: 1=正常, 0=禁用';
 
 -- ============================================================
 -- 2. 会话表 (sessions)
@@ -45,7 +23,7 @@ COMMENT ON COLUMN users.status       IS '账号状态: 1=正常, 0=禁用';
 -- ============================================================
 CREATE TABLE IF NOT EXISTS sessions (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id     UUID        NOT NULL,                         -- 所属用户 ID（hwan 认证服务中的用户 ID，无外键）
     agent_id    VARCHAR(64) NOT NULL,                         -- Agent 标识，如 "general", "gold_analysis"
     title       VARCHAR(255),                                 -- 会话标题（首条消息自动截取或用户手动设置）
     summary     TEXT,                                         -- 会话摘要（用于 RAG 检索，可由 LLM 自动生成）
@@ -77,7 +55,7 @@ COMMENT ON COLUMN sessions.status       IS '会话状态: 1=活跃, 0=已归档'
 CREATE TABLE IF NOT EXISTS messages (
     id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id      UUID        NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id         UUID        NOT NULL,                     -- 所属用户 ID（hwan 认证服务中的用户 ID，无外键）
     role            VARCHAR(16) NOT NULL,                     -- 消息角色: user / assistant / tool / system
     content         TEXT        NOT NULL DEFAULT '',          -- 消息文本内容
     tool_call_id    VARCHAR(128),                             -- 工具调用 ID（role=tool 时有值）
@@ -119,7 +97,7 @@ CREATE TABLE IF NOT EXISTS message_embeddings (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     message_id  UUID        NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     session_id  UUID        NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id     UUID        NOT NULL,                         -- 所属用户 ID（hwan 认证服务中的用户 ID，无外键）
     embedding   vector(1536) NOT NULL,                     -- 消息内容的向量表示
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -147,10 +125,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER trg_users_updated_at
-    BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
 CREATE OR REPLACE TRIGGER trg_sessions_updated_at
     BEFORE UPDATE ON sessions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -173,27 +147,3 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER trg_messages_update_session
     AFTER INSERT ON messages
     FOR EACH ROW EXECUTE FUNCTION update_session_on_message();
-
--- ============================================================
--- 7. 邮箱验证码表 (email_verifications)
--- 存储邮箱验证码，用于注册、重置密码等场景
--- ============================================================
-CREATE TABLE IF NOT EXISTS email_verifications (
-    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    email       VARCHAR(255) NOT NULL,                        -- 目标邮箱
-    code        VARCHAR(10)  NOT NULL,                        -- 验证码（6位数字）
-    purpose     VARCHAR(32)  NOT NULL DEFAULT 'register',     -- 用途: register, reset_password
-    used        BOOLEAN      NOT NULL DEFAULT false,          -- 是否已使用
-    expires_at  TIMESTAMPTZ  NOT NULL,                        -- 过期时间
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_email_verifications_email   ON email_verifications(email, purpose, used);
-CREATE INDEX IF NOT EXISTS idx_email_verifications_expires ON email_verifications(expires_at);
-
-COMMENT ON TABLE  email_verifications           IS '邮箱验证码表';
-COMMENT ON COLUMN email_verifications.email     IS '目标邮箱地址';
-COMMENT ON COLUMN email_verifications.code      IS '6位数字验证码';
-COMMENT ON COLUMN email_verifications.purpose   IS '用途: register=注册, reset_password=重置密码';
-COMMENT ON COLUMN email_verifications.used      IS '是否已使用';
-COMMENT ON COLUMN email_verifications.expires_at IS '验证码过期时间';

@@ -18,8 +18,8 @@
 - ⚙️ **YAML 配置** — 统一使用仓库根目录下的 `config.yaml` 管理所有配置项
 - 🔒 **并发安全** — 使用互斥锁 + channel 机制保护对话历史的并发访问
 - 💬 **对话管理** — 每个Agent拥有独立的对话历史和上下文维护
-- 🔑 **用户认证** — JWT 鉴权，支持注册/登录，所有业务接口均需登录态
-- 📧 **邮箱验证** — 注册时强制邮箱验证码校验，SMTP 发送验证码，防止恶意注册
+- 🔑 **用户认证** — JWT 鉴权，支持注册/登录，所有业务接口均需登录态；用户系统由 **hwan 认证服务**统一提供（与 agenteam 共用），agently 仅做代理与 Token 校验
+- 📧 **邮箱验证** — 注册时强制邮箱验证码校验（由 hwan 认证服务发送与校验），防止恶意注册
 - 🗄️ **会话持久化** — 对话历史存储到 PostgreSQL，刷新页面后可完整恢复
 - 🌐 **gRPC 内核 + HTTP 网关** — 业务以 gRPC 实现并默认仅监听回环，由 grpc-gateway 统一对外提供 RESTful + SSE，前端零改造接入
 
@@ -77,10 +77,8 @@ agently/
 │   │   ├── gold_analysis/prompt.yaml       # 黄金分析助手 Prompt（依赖 mcp_servers: [gold_analysis]）
 │   │   ├── news_analysis/prompt.yaml       # 新闻分析助手 Prompt（依赖 mcp_servers: [news_analysis]）
 │   │   └── intention_router/prompt.yaml    # 意图路由 Agent Prompt
-│   ├── auth/
-│   │   ├── auth.go                         # 用户认证服务（注册、登录、JWT 签发与验证）
-│   │   ├── email_verify.go                 # 邮箱验证业务编排
-│   │   └── mailer.go                       # SMTP 邮件发送器
+│   ├── authclient/
+│   │   └── client.go                       # hwan 认证服务 gRPC 客户端（注册/登录/发码代理 + Token 校验）
 │   ├── config/
 │   │   └── config.go                       # 配置加载与验证
 │   ├── server/                             # gRPC 服务实现 + 网关编排
@@ -106,8 +104,7 @@ agently/
 │   │   ├── db.go                            # 数据库连接池封装
 │   │   ├── user.go                          # 用户表访问
 │   │   ├── session.go                       # 会话表访问
-│   │   ├── message.go                       # 消息表访问
-│   │   └── email_verification.go            # 邮箱验证码表访问
+│   │   └── message.go                       # 消息表访问
 │   └── tools/
 │       ├── setup.go                         # 本地工具组注入入口（SetupLocalToolGroup）
 │       ├── local/                           # 本地工具（插件化自注册）
@@ -123,7 +120,7 @@ agently/
 │       └── utils.go                         # 工具函数
 ├── scripts/
 │   ├── 000_init_db.sql                     # 🆕 初始化数据库与用户（超级用户执行，创建 agentlydb）
-│   └── 001_create_tables.sql               # 建表 SQL（users / sessions / messages / email_verifications）
+│   └── 001_create_tables.sql               # 建表 SQL（sessions / messages / message_embeddings；用户表已迁至 hwan 认证服务）
 ├── go.mod
 ├── go.sum
 └── README.md
@@ -137,7 +134,7 @@ agently/
 
 - Go 1.25+
 - PostgreSQL 16+（含 pgvector 扩展）
-- SMTP 邮件服务（必配，用于发送注册验证码）
+- hwan 认证服务（`hwan/app/auth`，必需：注册 / 登录 / Token 校验；SMTP 与 JWT 密钥由它持有）
 - 网络连接（访问 LLM API 和工具 API）
 - （可选）MCP 工具服务端（黄金分析助手、新闻分析助手需要）
 - （仅在需要**重新生成** gRPC 代码/接口文档时）`protoc` 及以下插件：`protoc-gen-go`、`protoc-gen-go-grpc`、`protoc-gen-grpc-gateway`、`protoc-gen-openapiv2`。生成产物已随仓库提交，普通运行无需安装这些工具。
@@ -200,18 +197,12 @@ database:
   max_idle_conns: 5
   conn_max_lifetime: 300
 
-# JWT 配置
-jwt:
-  secret: "your-strong-random-secret"
-  expire_hour: 72
-
-# SMTP 邮件配置（必配项，未配置则无法启动）
-smtp:
-  host: "smtp.qq.com"              # SMTP 服务器地址
-  port: 587                         # SMTP 端口（587=TLS, 465=SSL）
-  username: "your-email@qq.com"     # SMTP 登录用户名（通常是邮箱地址）
-  password: "your-smtp-auth-code"   # SMTP 登录密码或授权码
-  from: ""                          # 发件人地址（可选，默认使用 username）
+# hwan 认证服务（用户系统已抽离：注册 / 登录 / 邮箱验证码 / Token 校验）
+# JWT 密钥与 SMTP 配置现由 hwan 认证服务持有，agently 不再需要
+auth_service:
+  addr: "127.0.0.1:50054"           # hwan app/auth 的 gRPC 地址（建议仅内网可达）
+  token: "your-service-token"       # 调用方凭证，须与 hwan auth 的 server.services 里 name 为 agently 那一项的 token 一致
+                                    # Access Token 由 agently 用 auth 服务发布的公钥（GetJWKS）本地验签，无需配置任何签名密钥
 
 # LLM 配置
 llm:
@@ -313,9 +304,8 @@ ReadWritePaths=/opt/agently/logs
 [INFO] Agent [general] 已注册到管理器
 [INFO] Agent [gold_analysis] 已注册到管理器
 [INFO] Agent [news_analysis] 已注册到管理器
-[INFO] 数据库连接成功，认证服务已初始化
-[INFO] 邮箱验证服务已启用（SMTP: smtp.qq.com）
-[INFO] 鉴权策略已加载：共 11 个方法，其中公开（免鉴权）方法 3 个: /agently.v1.AuthService/Login, /agently.v1.AuthService/Register, /agently.v1.AuthService/SendVerifyCode
+[INFO] 认证服务客户端已初始化（hwan auth 服务: 127.0.0.1:50054）
+[INFO] 鉴权策略已加载：共 12 个方法，其中公开（免鉴权）方法 3 个: /agently.v1.AuthService/Login, /agently.v1.AuthService/Register, /agently.v1.AuthService/SendVerifyCode
 [INFO] gRPC 服务启动，监听地址: 127.0.0.1:8081
 [INFO] HTTP 网关启动，监听地址: 0.0.0.0:8080
 ```
@@ -383,7 +373,9 @@ data: {}
 Authorization: Bearer <token>
 ```
 
-Token 通过注册或登录接口获取，默认有效期 **72 小时**。
+Token 通过注册或登录接口获取。有效期由 hwan 认证服务控制（见 `hwan/app/auth/README.md` 的“Token 生命周期”）：
+**空闲 72 小时未使用则失效，每次带鉴权访问都会自动续期**（Token 字符串不变，前端无需处理）；自登录起最长 30 天（绝对上限）。
+退出登录时请调用 `POST /v1/auth:logout`，服务端会吊销该 Token，之后即使被他人拿到也无法使用。
 
 ### 注册流程
 
@@ -398,6 +390,7 @@ Token 通过注册或登录接口获取，默认有效期 **72 小时**。
 | POST | `/v1/auth:sendVerifyCode` | ❌ | 发送邮箱验证码（注册/重置密码） |
 | POST | `/v1/auth:register` | ❌ | 用户注册（需先获取验证码），返回 JWT Token |
 | POST | `/v1/auth:login` | ❌ | 用户登录（支持用户名/邮箱），返回 JWT Token |
+| POST | `/v1/auth:logout` | ✅ | 登出：吊销当前登录链路的 Refresh Token（幂等，Access Token 允许已过期） |
 | GET | `/v1/agents` | ✅ | 获取可用 Agent 列表 |
 | GET | `/v1/tools` | ✅ | 获取所有可用工具列表（按工具名去重） |
 | POST | `/v1/agents:switch` | ✅ | 切换当前激活的 Agent |
@@ -459,7 +452,7 @@ graph TD
     SVC --> AS2[AuthService]
     SVC --> AGS[AgentService]
     SVC --> SES[SessionService]
-    AS2 --> US[UserStore<br/>PostgreSQL]
+    AS2 --> |gRPC| US[hwan 认证服务<br/>AuthService]
     SES --> |会话/消息| SS[Session/Message Store<br/>PostgreSQL]
     SES --> |AI 对话| AM2[Agent Manager]
     AM2 --> AG2[Target Agent]
@@ -549,6 +542,8 @@ sequenceDiagram
 | `AuthService` | `SendVerifyCode` | `POST /v1/auth:sendVerifyCode` | ❌ |
 | `AuthService` | `Register` | `POST /v1/auth:register` | ❌ |
 | `AuthService` | `Login` | `POST /v1/auth:login` | ❌ |
+| `AuthService` | `Refresh` | `POST /v1/auth:refresh` | ❌（用 `refresh_token` 换新的 Access Token，并轮换 Refresh Token） |
+| `AuthService` | `Logout` | `POST /v1/auth:logout` | ❌（Access Token 过期后仍应能退出，由 Token 签名自证身份；吊销整条登录链路） |
 | `AgentService` | `ListAgents` | `GET /v1/agents` | ✅ |
 | `AgentService` | `ListTools` | `GET /v1/tools` | ✅ |
 | `AgentService` | `SwitchAgent` | `POST /v1/agents:switch` | ✅ |
@@ -803,7 +798,7 @@ smtp:
 3. **如果必须短信**：考虑 Twilio（海外用户）或腾讯云 SMS（国内用户，需企业认证）
 4. **替代方案**：可以考虑 OAuth 第三方登录（微信/GitHub/Google），免去验证码环节
 
-> 本项目已实现完整的邮箱验证码方案（业务编排见 [internal/auth/email_verify.go](internal/auth/email_verify.go)，SMTP 协议层见 [internal/auth/mailer.go](internal/auth/mailer.go)，数据访问见 [internal/store/email_verification.go](internal/store/email_verification.go)），只需在 `config.yaml` 中配置 SMTP 信息即可投入使用。
+> 邮箱验证码方案已由 hwan 认证服务（`hwan/app/auth`）实现：业务编排在 `internal/usecase/send_verify_code.go`，SMTP 协议层在 `internal/mailer`。agently 的 `AuthService` 只是对它的薄代理，对外 REST 路径与响应格式保持不变。
 
 ---
 
@@ -939,18 +934,17 @@ llm:
 | `github.com/a2aproject/a2a-go/v2` | A2A（Agent2Agent）协议 Go SDK：暴露业务 Agent 为可互操作端点 |
 | `github.com/a2aproject/a2a-go`（legacy，间接依赖） | `a2a-go/v2` 的 `a2acompat/a2av0` 协议兼容层依赖，用于让 JSON-RPC 方法名与规范文档（`message/send` 等）保持一致 |
 | `github.com/skip2/go-qrcode` | 二维码生成 |
-| `github.com/golang-jwt/jwt/v5` | JWT 签发与验证 |
 | `github.com/lib/pq` | PostgreSQL 驱动 |
-| `golang.org/x/crypto` | bcrypt 密码哈希 |
 | `golang.org/x/text` | 文本处理 |
 | `gopkg.in/yaml.v2` | YAML 配置解析 |
 
 ## ⚠️ 注意事项
 
 1. **API 密钥安全**：`config.yaml` 中包含敏感信息，请勿提交到公开仓库（已在 `.gitignore` 中排除本地覆盖配置 `config_local.yaml`）
-2. **JWT 密钥**：生产环境必须在 `config.yaml` 的 `jwt.secret` 中设置强随机值，切勿使用默认值
-3. **SMTP 必配**：邮箱验证服务为必配项，未配置 SMTP 时项目无法启动。推荐使用 QQ 邮箱（smtp.qq.com:587）或网易邮箱（smtp.163.com:465），需开启 SMTP 服务并获取授权码
-4. **数据库依赖**：数据库不可用时项目无法启动，所有业务接口（注册/登录/会话/Agent管理）依赖数据库
+2. **JWT 密钥与 SMTP**：已由 hwan 认证服务持有并配置（见 `hwan/app/auth/cmd/config/config.yaml`），agently 不再需要。生产环境请在认证服务中设置强随机的 `jwt.secret`
+3. **认证服务依赖**：注册 / 登录 / 所有需鉴权的接口都依赖 hwan 认证服务。认证服务不可达时，需鉴权接口返回 `503`（而非 `401`），客户端不会被误踢下线；agently 本身仍可启动
+4. **数据库依赖**：数据库不可用时项目无法启动，会话 / 消息 / Agent 管理等接口依赖数据库
+5. **存量数据迁移**：已有 `users` 数据的环境需把用户表迁到 hwan 认证服务，步骤见 `hwan/app/auth/README.md` 的“从 agently 迁移存量用户”（用户 ID 保持不变，历史会话归属不受影响）
 5. **网络依赖**：天气、翻译、短链接等工具需要网络访问对应的 API 服务
 6. **翻译服务**：默认使用 LibreTranslate 公共实例（`https://libretranslate.com`），也可自行部署私有实例并替换 `base_url`
 7. **MCP服务**：黄金分析助手、新闻分析助手依赖各自的 MCP 工具服务端，如服务未启动或探活失败，启动会 fail-fast 报错

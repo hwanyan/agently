@@ -12,6 +12,7 @@ import (
 
 	agentlypb "github.com/hwanyan/agently/pb/gen"
 	"github.com/hwanyan/agently/pkg/types"
+	authpb "github.com/hwanyan/proto/auth"
 )
 
 // formatTime 将时间格式化为 RFC3339；零值返回空字符串
@@ -30,21 +31,21 @@ func formatTimePtr(t *time.Time) string {
 	return formatTime(*t)
 }
 
-// toPBUser 将领域模型 User 转为 pb.User（不含密码）
-func toPBUser(u *types.User) *agentlypb.User {
+// toPBUser 将认证服务返回的 authpb.User 转为 agently 对外契约的 pb.User（字段一一对应，时间已是 RFC3339 字符串）
+func toPBUser(u *authpb.User) *agentlypb.User {
 	if u == nil {
 		return nil
 	}
 	return &agentlypb.User{
-		Id:        u.ID,
-		Username:  u.Username,
-		Email:     u.Email,
-		Nickname:  u.Nickname,
-		AvatarUrl: u.AvatarURL,
-		Status:    int32(u.Status),
-		CreatedAt: formatTime(u.CreatedAt),
-		UpdatedAt: formatTime(u.UpdatedAt),
-		LastLogin: formatTimePtr(u.LastLogin),
+		Id:        u.GetId(),
+		Username:  u.GetUsername(),
+		Email:     u.GetEmail(),
+		Nickname:  u.GetNickname(),
+		AvatarUrl: u.GetAvatarUrl(),
+		Status:    u.GetStatus(),
+		CreatedAt: u.GetCreatedAt(),
+		UpdatedAt: u.GetUpdatedAt(),
+		LastLogin: u.GetLastLogin(),
 	}
 }
 

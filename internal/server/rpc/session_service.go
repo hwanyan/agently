@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -33,10 +34,24 @@ func NewSessionServer(manager *agent.Manager, sessionStore *store.SessionStore, 
 	}
 }
 
+// requireUser 从 context 取出已认证的用户 ID；为空则返回 Unauthenticated。
+//
+// 这是鉴权拦截器之外的纵深防御：即使拦截器被误配（如某方法被误标 public）或被绕过，
+// 业务方法也不会在没有身份的情况下继续执行并写库。
+func requireUser(ctx context.Context) (string, error) {
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == "" {
+		return "", status.Error(codes.Unauthenticated, "未认证的用户")
+	}
+	return userID, nil
+}
+
 // ListSessions 查询当前用户的会话列表
 func (s *SessionServer) ListSessions(ctx context.Context, req *agentlypb.ListSessionsRequest) (*agentlypb.ListSessionsResponse, error) {
-	userID := middleware.UserIDFromContext(ctx)
-
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
 		limit = 20
@@ -66,8 +81,10 @@ func (s *SessionServer) ListSessions(ctx context.Context, req *agentlypb.ListSes
 
 // CreateSession 创建新会话
 func (s *SessionServer) CreateSession(ctx context.Context, req *agentlypb.CreateSessionRequest) (*agentlypb.CreateSessionResponse, error) {
-	userID := middleware.UserIDFromContext(ctx)
-
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetAgentId() == "" {
 		logger.Warning("创建会话时AgentID为空")
 		return nil, status.Error(codes.InvalidArgument, "agent_id 不能为空")
@@ -89,8 +106,10 @@ func (s *SessionServer) CreateSession(ctx context.Context, req *agentlypb.Create
 
 // ListMessages 查询会话消息历史
 func (s *SessionServer) ListMessages(ctx context.Context, req *agentlypb.ListMessagesRequest) (*agentlypb.ListMessagesResponse, error) {
-	userID := middleware.UserIDFromContext(ctx)
-
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "缺少会话 ID")
 	}
@@ -128,7 +147,10 @@ func (s *SessionServer) ListMessages(ctx context.Context, req *agentlypb.ListMes
 
 // ArchiveSession 归档会话（软删除）
 func (s *SessionServer) ArchiveSession(ctx context.Context, req *agentlypb.ArchiveSessionRequest) (*agentlypb.ArchiveSessionResponse, error) {
-	userID := middleware.UserIDFromContext(ctx)
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "缺少会话 ID")
 	}
@@ -145,8 +167,10 @@ func (s *SessionServer) ArchiveSession(ctx context.Context, req *agentlypb.Archi
 // Chat 在指定会话中发送消息，服务端流式返回对话事件（对应旧 SSE 流）
 func (s *SessionServer) Chat(req *agentlypb.ChatRequest, stream agentlypb.SessionService_ChatServer) error {
 	ctx := stream.Context()
-	userID := middleware.UserIDFromContext(ctx)
-
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return err
+	}
 	sessionID := req.GetSessionId()
 	if sessionID == "" {
 		return status.Error(codes.InvalidArgument, "缺少会话 ID")
@@ -219,8 +243,15 @@ func (s *SessionServer) Chat(req *agentlypb.ChatRequest, stream agentlypb.Sessio
 
 	// 持久化用户消息
 	userMsg := types.Message{Role: "user", Content: req.GetMessage()}
+	// 用户消息持久化失败必须中断对话：否则会出现「模型已回复、历史里却没有提问」的数据残缺，
+	// 且归属校验失败（ErrSessionNotOwned）意味着请求本身不合法，不应继续消耗 LLM 资源。
 	if _, pErr := s.messageStore.SaveMessage(sessionID, userID, routedAgentID, userMsg); pErr != nil {
+		if errors.Is(pErr, store.ErrSessionNotOwned) {
+			logger.Warning("持久化用户消息被拒绝（会话不存在或无权限）: 会话: %s, 用户: %s", sessionID, userID)
+			return status.Error(codes.NotFound, "会话不存在或无权限")
+		}
 		logger.Error("持久化用户消息失败: %v", pErr)
+		return status.Error(codes.Internal, "保存消息失败，请稍后重试")
 	}
 	// 若会话标题为空，用首条消息前 50 字作为标题
 	if session.Title == "" {
@@ -289,6 +320,11 @@ func (s *SessionServer) Chat(req *agentlypb.ChatRequest, stream agentlypb.Sessio
 		aiMsg := types.Message{Role: "assistant", Content: fullResponse.String()}
 		if _, pErr := s.messageStore.SaveMessage(sessionID, userID, routedAgentID, aiMsg); pErr != nil {
 			logger.Error("持久化AI回复失败: %v", pErr)
+			// 回复已流式下发给客户端，无法回滚；以 error 事件告知客户端「本条回复未保存」，
+			// 避免用户刷新后发现历史缺失却毫无感知。随后仍正常发送 done 结束流。
+			if sErr := stream.Send(&agentlypb.ChatEvent{Type: "error", Error: "本条回复未能保存到历史记录"}); sErr != nil {
+				return sErr
+			}
 		}
 	}
 

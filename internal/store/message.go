@@ -3,10 +3,14 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/hwanyan/agently/pkg/types"
 )
+
+// ErrSessionNotOwned 会话不存在或不属于指定用户（写入被 store 层拒绝）
+var ErrSessionNotOwned = errors.New("会话不存在或无权限")
 
 // MessageStore 消息数据访问对象
 type MessageStore struct {
@@ -19,6 +23,7 @@ func NewMessageStore(db *DB) *MessageStore {
 }
 
 // SaveMessage 保存一条消息到数据库
+// 会话归属由本方法自身保证：仅当 sessionID 属于 userID 时才会写入，否则返回 ErrSessionNotOwned。
 // 参数：
 //   - sessionID: 会话 ID
 //   - userID: 用户 ID
@@ -27,7 +32,7 @@ func NewMessageStore(db *DB) *MessageStore {
 //
 // 返回：
 //   - *types.StoredMessage: 持久化后的消息
-//   - error: 可能的错误
+//   - error: 可能的错误（会话不存在或不属于该用户时为 ErrSessionNotOwned）
 func (s *MessageStore) SaveMessage(sessionID, userID, agentID string, msg types.Message) (*types.StoredMessage, error) {
 	// 序列化工具调用列表
 	toolCallsJSON := ""
@@ -39,20 +44,16 @@ func (s *MessageStore) SaveMessage(sessionID, userID, agentID string, msg types.
 		toolCallsJSON = string(b)
 	}
 
-	// 获取当前会话的最大 seq，用于递增
-	var maxSeq int
-	err := s.db.QueryRow(
-		`SELECT COALESCE(MAX(seq), 0) FROM messages WHERE session_id = $1`,
-		sessionID,
-	).Scan(&maxSeq)
-	if err != nil {
-		return nil, fmt.Errorf("获取消息序号失败: %w", err)
-	}
-	nextSeq := maxSeq + 1
-
+	// 归属校验与写入合并为单条语句：仅当 sessionID 对应的会话确实属于 userID 时才会插入，
+	// 否则 INSERT ... SELECT 产生 0 行、返回 sql.ErrNoRows。
+	// 这样“会话归属”由 store 层自己保证，不依赖调用方事先校验。
+	// seq 同样在语句内以子查询计算（会话下最大 seq + 1）。
+	// INSERT ... SELECT 的 SELECT 列表里参数无法由目标列反推类型，故显式 CAST。
 	query := `
 		INSERT INTO messages (session_id, user_id, role, content, tool_call_id, tool_call_list, agent_id, seq)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		SELECT $1::uuid, $2::uuid, $3::varchar, $4::text, $5::varchar, $6::jsonb, $7::varchar,
+		       COALESCE((SELECT MAX(seq) FROM messages WHERE session_id = $1::uuid), 0) + 1
+		WHERE EXISTS (SELECT 1 FROM sessions WHERE id = $1::uuid AND user_id = $2::uuid)
 		RETURNING id, session_id, user_id, role, content, tool_call_id, tool_call_list, agent_id, token_count, seq, created_at
 	`
 
@@ -60,7 +61,7 @@ func (s *MessageStore) SaveMessage(sessionID, userID, agentID string, msg types.
 	var toolCallID sql.NullString
 	var toolCallsVal sql.NullString
 
-	err = s.db.QueryRow(
+	err := s.db.QueryRow(
 		query,
 		sessionID,
 		userID,
@@ -69,7 +70,6 @@ func (s *MessageStore) SaveMessage(sessionID, userID, agentID string, msg types.
 		nullableString(msg.ToolCallID),
 		nullableString(toolCallsJSON),
 		nullableString(agentID),
-		nextSeq,
 	).Scan(
 		&stored.ID,
 		&stored.SessionID,
@@ -84,6 +84,9 @@ func (s *MessageStore) SaveMessage(sessionID, userID, agentID string, msg types.
 		&stored.CreatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSessionNotOwned
+		}
 		return nil, fmt.Errorf("保存消息失败: %w", err)
 	}
 
@@ -98,13 +101,25 @@ func (s *MessageStore) SaveMessage(sessionID, userID, agentID string, msg types.
 }
 
 // SaveMessages 批量保存消息（事务）
-// 用于会话恢复时批量写入历史消息
+// 用于会话恢复时批量写入历史消息。
+// 与 SaveMessage 一致，会话归属由本方法自身保证：会话不存在或不属于 userID 时返回 ErrSessionNotOwned，不写入任何数据。
 func (s *MessageStore) SaveMessages(sessionID, userID, agentID string, msgs []types.Message) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("开启事务失败: %w", err)
 	}
 	defer tx.Rollback()
+
+	// 校验会话归属，并对会话行加锁（FOR UPDATE），使同一会话的并发批量写入串行化，避免 seq 冲突
+	var owned int
+	if err := tx.QueryRow(
+		`SELECT 1 FROM sessions WHERE id = $1 AND user_id = $2 FOR UPDATE`, sessionID, userID,
+	).Scan(&owned); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrSessionNotOwned
+		}
+		return fmt.Errorf("校验会话归属失败: %w", err)
+	}
 
 	// 获取当前最大 seq
 	var maxSeq int
@@ -127,7 +142,10 @@ func (s *MessageStore) SaveMessages(sessionID, userID, agentID string, msgs []ty
 	for i, msg := range msgs {
 		toolCallsJSON := ""
 		if len(msg.ToolCallList) > 0 {
-			b, _ := json.Marshal(msg.ToolCallList)
+			b, mErr := json.Marshal(msg.ToolCallList)
+			if mErr != nil {
+				return fmt.Errorf("序列化工具调用失败（第 %d 条）: %w", i+1, mErr)
+			}
 			toolCallsJSON = string(b)
 		}
 

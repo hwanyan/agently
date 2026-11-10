@@ -122,11 +122,27 @@ message LoginRequest {
 
 message AuthResponse {
   int32 code = 1;
-  string token = 2;
+  string token = 2;          // Access Token（短寿命 JWT），以 Authorization: Bearer 携带
   User user = 3;
+  string refresh_token = 4;  // Refresh Token，仅用于调用 Refresh；每次刷新都会轮换
+  int64 expires_in = 5;      // Access Token 有效期（秒）
 }
 
-// AuthService 用户认证（注册 / 登录 / 邮箱验证码），均为公开接口，无需鉴权
+// RefreshRequest 用 Refresh Token 换取新的 Access Token（公开接口：此时 Access Token 通常已过期）
+message RefreshRequest {
+  string refresh_token = 1;
+}
+
+// LogoutRequest 登出请求：无参数，要吊销的 Token 取自请求头 Authorization: Bearer <token>
+message LogoutRequest {}
+message LogoutResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+// AuthService 用户认证（注册 / 登录 / 邮箱验证码 / 刷新 / 登出）
+// 均为公开接口，不经过 Access Token 鉴权拦截器：注册 / 登录 / 发验证码尚无 Token；
+// Refresh / Logout 调用时 Access Token 往往已过期，由 Refresh Token 或 Token 签名自行证明身份。
 //
 // REST 路径采用资源导向 + 版本前缀（/v1）。产品名前缀（如 /api/agently）不写入契约，
 // 由 nginx/ingress 统一添加，保持契约与部署拓扑解耦。auth 属动作型接口，使用 :动词 自定义方法。
@@ -148,6 +164,24 @@ service AuthService {
   rpc Login(LoginRequest) returns (AuthResponse) {
     option (google.api.http) = {
       post: "/v1/auth:login"
+      body: "*"
+    };
+    option (agently.v1.public) = true;
+  }
+  // Refresh 用 Refresh Token 换取新的 Access Token（并轮换 Refresh Token）。
+  // 标 public：调用它时 Access Token 通常已经过期，身份由 Refresh Token 本身证明。
+  rpc Refresh(RefreshRequest) returns (AuthResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth:refresh"
+      body: "*"
+    };
+    option (agently.v1.public) = true;
+  }
+  // Logout 登出：吊销当前登录链路（其 Refresh Token 全部失效）。
+  // 标 public：Access Token 过期后用户仍应能退出登录；身份由请求头里的 Token 签名证明（过期也接受），服务端据此吊销。
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth:logout"
       body: "*"
     };
     option (agently.v1.public) = true;
