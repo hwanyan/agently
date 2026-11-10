@@ -200,7 +200,7 @@ database:
 # hwan 认证服务（用户系统已抽离：注册 / 登录 / 邮箱验证码 / Token 校验）
 # JWT 密钥与 SMTP 配置现由 hwan 认证服务持有，agently 不再需要
 auth_service:
-  addr: "127.0.0.1:50054"           # hwan app/auth 的 gRPC 地址（建议仅内网可达）
+  addr: "127.0.0.1:50054"           # hwan app/auth 的 gRPC 地址；当前为明文 gRPC，仅限同机回环，跨主机须先启用 TLS（见「注意事项」第 14 条）
   token: "your-service-token"       # 调用方凭证，须与 hwan auth 的 server.services 里 name 为 agently 那一项的 token 一致
                                     # Access Token 由 agently 用 auth 服务发布的公钥（GetJWKS）本地验签，无需配置任何签名密钥
 
@@ -954,6 +954,13 @@ llm:
 11. **消息字段**：持久化消息中工具调用列表字段名为 `tool_call_list`（JSON 序列化后的字符串）
 12. **验证码频率限制**：同一邮箱 60 秒内只能发送一次验证码，验证码有效期 5 分钟
 13. **会话 Agent 同步**：自动路由模式下，会话的 `agent_id` 会随路由结果发生变化（仅对 `status=1` 活跃会话生效）；手动模式（`auto_route: false`）不会触发同步
+14. **与认证服务的传输安全（仅限同机部署）**：`internal/authclient` 连接 hwan 认证服务时使用明文 gRPC（`insecure.NewCredentials()`，且 `serviceTokenCreds.RequireTransportSecurity()` 返回 `false`）。当前为**单机部署**，`auth_service.addr` 为 `127.0.0.1`，流量不经过物理网卡，因此不存在被窃听的风险，暂不启用 TLS。**以下情况出现任意一种，必须先改用 TLS（建议 mTLS）再上线**：
+    - 认证服务与 agently 不在同一台主机（同内网不同机器、跨 K8s 节点、跨机房、公网均算在内；云厂商 VPC 内网也不等于可信）；
+    - 认证服务监听了非回环地址（如 `0.0.0.0`）。
+
+    不改的后果：这条连接上传输的内容包括 **服务调用方凭证**（`auth_service.token`，每个 RPC 都带，泄露后可冒充 agently）、`Login` 的用户名与密码、`Refresh`/`Logout` 的 Refresh Token，以及 **`GetJWKS` 返回的 Token 验签公钥**。其中公钥最关键：agently 本地验签的信任根就是它，明文通道上被中间人替换后，攻击者可伪造任意 Access Token 并通过 agently 的校验。
+
+    迁移要点：内部服务间通信无需购买商业证书，用私有 CA 签发即可（认证服务端证书的 SAN 须包含 agently 实际拨号的主机名或 IP；mTLS 时再给 agently 签一张客户端证书）；对外有公网域名时也可用 Let's Encrypt。代码侧需要把 `authclient.New` 中的 `insecure.NewCredentials()` 换成 `credentials.NewTLS(...)`、在 `auth_service` 配置中增加证书路径，并将 `RequireTransportSecurity()` 改为 `true`（这样配置被误改回明文时，gRPC 会拒绝发送凭证，而不是悄悄泄露）；认证服务一侧也要同步开启 TLS。
 
 ## 📄 许可证
 

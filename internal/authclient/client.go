@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/hwanyan/agently/internal/logger"
-	"github.com/hwanyan/hwan/app/auth/verifier"
+	"github.com/hwanyan/authkit/verifier"
 	authpb "github.com/hwanyan/proto/auth"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
